@@ -1,6 +1,7 @@
 /lodepng
 /bin
 /obj
+/.cache
 .png
 .json
 .cbp
