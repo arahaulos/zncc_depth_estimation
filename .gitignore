@@ -2,8 +2,8 @@ lodepng/
 bin/
 obj/
 .cache/
-.png
-.json
-.cbp
-.depend
-.layout
+*.png
+*.json
+*.cbp
+*.depend
+*.layout
