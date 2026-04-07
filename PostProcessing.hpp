@@ -16,7 +16,7 @@ namespace PostProcessing
         Image output;
     };
 
-    CrossCheckResult cross_check(Disparity::DisparityResult disparity, int min_disparity, int max_disparity, int max_disp_diff);
+    CrossCheckResult crossCheck(Disparity::DisparityResult disparity, int min_disparity, int max_disparity, int max_disp_diff);
 
     Image fill(CrossCheckResult &result);
 }

@@ -19,7 +19,7 @@ Image estimateDepthMap(std::shared_ptr<Disparity::DisparityEstimator> disp_estim
 {
     Disparity::DisparityResult disparity = disp_estimator->estimate(left, right, win_size, min_disparity, max_disparity);
 
-    PostProcessing::CrossCheckResult cc_result = PostProcessing::cross_check(disparity, min_disparity, max_disparity, 5);
+    PostProcessing::CrossCheckResult cc_result = PostProcessing::crossCheck(disparity, min_disparity, max_disparity, 5);
 
     return PostProcessing::fill(cc_result);
 }
@@ -72,14 +72,14 @@ int main()
 
     Image depth_map;
 
-    uint64_t t0 = Utils::timestamp_us();
+    uint64_t t0 = Utils::timestampUs();
 
     for (int i = 0; i < 10; i++) {
         depth_map = estimateDepthMap(disp_estimator, left, right, 9, 0, 65);
     }
 
 
-    uint64_t us = (Utils::timestamp_us() - t0) / 10;
+    uint64_t us = (Utils::timestampUs() - t0) / 10;
 
     std::cout << "Time: " << static_cast<double>(us) / 1000000 << "s" << std::endl;
 

@@ -10,7 +10,7 @@
 namespace PostProcessing
 {
 
-uint8_t find_closes_scanline_non_zero(Image &img, int x, int y)
+uint8_t findClosestNonZeroScanline(Image &img, int x, int y)
 {
     uint8_t *scanline = &img.pixels[y * img.width];
 
@@ -44,7 +44,7 @@ uint8_t find_closes_scanline_non_zero(Image &img, int x, int y)
     }
 }
 
-uint8_t find_closes_non_zero(Image &img, int x, int y)
+uint8_t findClosestNonZero(Image &img, int x, int y)
 {
     std::vector<bool> searched(img.width*img.height);
     std::fill(searched.begin(), searched.end(), false);
@@ -100,7 +100,7 @@ uint8_t find_closes_non_zero(Image &img, int x, int y)
 
 
 
-CrossCheckResult cross_check(Disparity::DisparityResult disparity, int min_disparity, int max_disparity, int max_disp_diff)
+CrossCheckResult crossCheck(Disparity::DisparityResult disparity, int min_disparity, int max_disparity, int max_disp_diff)
 {
     int width = disparity.leftToRight.width;
     int height = disparity.rightToLeft.height;
@@ -135,7 +135,7 @@ Image fill(CrossCheckResult &cc_result)
     result = cc_result.output;
 
     for (std::pair<int,int> p : cc_result.occluded) {
-        result.pixels[p.second*result.width + p.first] = find_closes_scanline_non_zero(cc_result.output, p.first, p.second);
+        result.pixels[p.second*result.width + p.first] = findClosestNonZeroScanline(cc_result.output, p.first, p.second);
     }
 
     return result;

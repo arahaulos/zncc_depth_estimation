@@ -8,7 +8,7 @@ namespace Utils
 {
 
 
-uint64_t timestamp_us()
+uint64_t timestampUs()
 {
     //I hate chono, i hate chrono, I HATE CHRONO
 
@@ -17,7 +17,7 @@ uint64_t timestamp_us()
     return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(clock::now().time_since_epoch()).count());
 }
 
-std::string read_text_file(std::string filename)
+std::string readTextFile(std::string filename)
 {
     std::cout << "Reading file: " << filename << "... ";
 

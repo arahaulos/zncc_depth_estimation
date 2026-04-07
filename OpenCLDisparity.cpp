@@ -15,7 +15,7 @@ OpenCLDisparityEstimator::OpenCLDisparityEstimator(std::shared_ptr<OpenCLContext
 
     cl_int err;
 
-    std::string kernels_text = Utils::read_text_file("kernels_opencl.hpp");
+    std::string kernels_text = Utils::readTextFile("kernels_opencl.hpp");
 
     const char *kernels_text_c_str = kernels_text.c_str();
 
