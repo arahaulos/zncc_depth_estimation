@@ -1,7 +1,7 @@
-/lodepng
-/bin
-/obj
-/.cache
+lodepng/
+bin/
+obj/
+.cache/
 .png
 .json
 .cbp
