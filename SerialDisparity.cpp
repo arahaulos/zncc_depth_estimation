@@ -19,11 +19,28 @@ Image disparity(float *left_img, float *right_img,
     Image disp;
     disp.allocate(width, height, 1);
 
+    int ws = (win_size-1)/2;
+
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
+            //Clip disparity range so that offset window cannot go outsize image
+            int min_disp = std::max(min_disparity, x - width + ws + 1);
+            int max_disp = std::min(max_disparity, x         - ws);
+
+            //Check if disparity range is valid
+            //And that window is inside image
+            if (min_disp > max_disp ||
+                x+ws >= width ||
+                x-ws < 0) {
+
+                disp.pixels[y * width + x] = 0;
+                continue;
+            }
+
+
             int best_disp = 0;
             float best_zncc = -std::numeric_limits<float>::infinity();
-            for (int d = min_disparity; d <= max_disparity; d++) {
+            for (int d = min_disp; d <= max_disp; d++) {
 
 
                 #ifdef USE_AVX2
@@ -62,6 +79,9 @@ Image disparity(float *left_img, float *right_img,
 
 DisparityResult SerialDisparityEstimator::estimate(Image &left, Image &right, int win_size, int min_disparity, int max_disparity)
 {
+    //Make sure that window size is odd
+    win_size = win_size | 0x1;
+
     int width = left.width;
     int height = left.height;
 
@@ -98,7 +118,7 @@ DisparityResult SerialDisparityEstimator::estimate(Image &left, Image &right, in
     result.rightToLeft = disparity(right_img.data(), left_img.data(),
                                    right_stdmean.data(), left_stdmean.data(),
                                    right_stddev.data(), left_stddev.data(),
-                                   width, height, win_size, -max_disparity, min_disparity);
+                                   width, height, win_size, -max_disparity, -min_disparity);
 
     return result;
 }

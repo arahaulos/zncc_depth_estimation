@@ -24,6 +24,8 @@ OpenCLContext::OpenCLContext() {
     context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
 
     queue = clCreateCommandQueue(context, device, 0, &err);
+
+    printDeviceInfo();
 }
 
 OpenCLContext::~OpenCLContext() {
@@ -37,4 +39,39 @@ bool OpenCLContext::checkError(cl_int err) {
         return true;
     }
     return false;
+}
+
+
+void OpenCLContext::printDeviceInfo()
+{
+    cl_device_local_mem_type mem_type;
+    cl_ulong mem_size;
+    cl_uint compute_units;
+    cl_uint clock_freq;
+    cl_ulong const_buf_size;
+    size_t max_group_size;
+    size_t work_item_sizes[16];
+    size_t work_item_ret_size;
+
+
+    clGetDeviceInfo(device, CL_DEVICE_LOCAL_MEM_TYPE,           sizeof(cl_device_local_mem_type), &mem_type,        NULL);
+    clGetDeviceInfo(device, CL_DEVICE_LOCAL_MEM_SIZE,           sizeof(cl_ulong),                 &mem_size,        NULL);
+    clGetDeviceInfo(device, CL_DEVICE_MAX_COMPUTE_UNITS,        sizeof(cl_uint),                  &compute_units,   NULL);
+    clGetDeviceInfo(device, CL_DEVICE_MAX_CLOCK_FREQUENCY,      sizeof(cl_device_local_mem_type), &clock_freq,      NULL);
+    clGetDeviceInfo(device, CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE, sizeof(const_buf_size),           &const_buf_size,  NULL);
+    clGetDeviceInfo(device, CL_DEVICE_MAX_WORK_GROUP_SIZE,      sizeof(size_t),                   &max_group_size,  NULL);
+    clGetDeviceInfo(device, CL_DEVICE_MAX_WORK_ITEM_SIZES,      sizeof(work_item_sizes),           work_item_sizes, &work_item_ret_size);
+
+
+    std::cout << "Local memory type: " << mem_type << std::endl;
+    std::cout << "Local memory size: " << mem_size / 1024 << " kB" << std::endl;
+    std::cout << "Clock frequency: " << clock_freq << " MHz" << std::endl;
+    std::cout << "Constant buffer size: " << const_buf_size / 1024 << " kB" << std::endl;
+    std::cout << "Max group size: " << max_group_size << std::endl;
+
+    std::cout << "Work item sizes: ";
+    for (int i = 0; i < work_item_ret_size / sizeof(size_t); i++) {
+        std::cout << work_item_sizes[i] << " ";
+    }
+    std::cout << std::endl;
 }

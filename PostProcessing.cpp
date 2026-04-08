@@ -115,7 +115,7 @@ CrossCheckResult crossCheck(Disparity::DisparityResult disparity, int min_dispar
             int leftdp = disparity.leftToRight.pixels[y*width + x];
             int rightdp = std::abs(disparity.rightToLeft.pixels[y*width + std::clamp(x - leftdp, 0, width-1)]);
 
-            if (std::abs(leftdp - rightdp) > max_disp_diff) {
+            if (std::abs(leftdp - rightdp) > max_disp_diff || leftdp == 0 || rightdp == 0) {
                 result.output.pixels[y*width + x] = 0;
                 result.occluded.emplace_back(x, y);
             } else {

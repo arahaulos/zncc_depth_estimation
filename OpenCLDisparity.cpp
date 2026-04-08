@@ -70,6 +70,9 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
     int width = left.width;
     int height = left.height;
 
+    //Make sure that window size is odd
+    win_size = win_size | 0x1;
+
     DisparityResult result;
 
     result.leftToRight.allocate(width, height, 1);
@@ -193,8 +196,8 @@ void OpenCLDisparityEstimator::checkBufferSize(int w, int h) {
 
     left_output_buffer  = clCreateBuffer(context->context, CL_MEM_WRITE_ONLY, w*h*sizeof(uint8_t), NULL, &err);
     right_output_buffer = clCreateBuffer(context->context, CL_MEM_WRITE_ONLY, w*h*sizeof(uint8_t), NULL, &err);
-    left_input_buffer   = clCreateBuffer(context->context, CL_MEM_READ_WRITE, w*h*sizeof(uint8_t), NULL, &err);
-    right_input_buffer  = clCreateBuffer(context->context, CL_MEM_READ_WRITE, w*h*sizeof(uint8_t), NULL, &err);
+    left_input_buffer   = clCreateBuffer(context->context, CL_MEM_READ_ONLY, w*h*sizeof(uint8_t), NULL, &err);
+    right_input_buffer  = clCreateBuffer(context->context, CL_MEM_READ_ONLY, w*h*sizeof(uint8_t), NULL, &err);
 
     for (int i = 0; i < 6; i++) {
         tmp_buffers[i] = clCreateBuffer(context->context, CL_MEM_READ_WRITE, w*h*sizeof(float), NULL, &err);

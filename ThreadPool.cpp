@@ -13,13 +13,24 @@ ThreadPool::ThreadPool()
     //When work counter = 0, we know that every added work has been executed
     work_counter = 0;
 
+    createThreads(num_of_threads);
+}
+
+ThreadPool::~ThreadPool()
+{
+    closeThreads();
+}
+
+
+void ThreadPool::createThreads(int num_of_threads)
+{
     exit_flag = false;
     for (int i = 0; i < num_of_threads; i++) {
         threads.push_back(std::thread(&ThreadPool::thread_entry, this));
     }
 }
 
-ThreadPool::~ThreadPool()
+void ThreadPool::closeThreads()
 {
     //Set exit flag so that threads know that they are supposed to return
     exit_flag = true;
@@ -31,7 +42,19 @@ ThreadPool::~ThreadPool()
     for (int i = 0; i < threads.size(); i++) {
         threads[i].join();
     }
+
+    threads.clear();
 }
+
+
+void ThreadPool::setThreads(int num_of_threads) {
+    wait();
+
+    closeThreads();
+    createThreads(num_of_threads);
+}
+
+
 
 void ThreadPool::wait()
 {

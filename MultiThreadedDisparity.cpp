@@ -26,12 +26,30 @@ void disparityScanlines(Image &disp, int sy,
     int width = disp.width;
     int height = disp.height;
 
+    int ws = (win_size-1)/2;
+
     for (int y = sy; y < std::min(height, sy+lines_per_task); y++) {
         for (int x = 0; x < width; x++) {
+
+            //Clip disparity range so that offset window cannot go outsize image
+            int min_disp = std::max(min_disparity, x - width + ws + 1);
+            int max_disp = std::min(max_disparity, x         - ws);
+
+            //Check if disparity range is valid
+            //And that window is inside image
+            if (min_disp > max_disp ||
+                x+ws >= width ||
+                x-ws < 0) {
+
+                disp.pixels[y * width + x] = 0;
+                continue;
+            }
+
             int best_disp = 0;
             float best_zncc = -std::numeric_limits<float>::infinity();
-            for (int d = min_disparity; d <= max_disparity; d++) {
 
+
+            for (int d = min_disp; d <= max_disp; d++) {
 
                 #ifdef USE_AVX2
 
@@ -108,6 +126,9 @@ void disparity(ThreadPool &pool, Image &disp,
 
 DisparityResult MultiThreadedDisparityEstimator::estimate(Image &left, Image &right, int win_size, int min_disparity, int max_disparity)
 {
+    //Make sure that window size is odd
+    win_size = win_size | 0x1;
+
     DisparityResult result;
     result.leftToRight.allocate(left.width, right.height, 1);
     result.rightToLeft.allocate(left.width, right.height, 1);
@@ -148,7 +169,7 @@ DisparityResult MultiThreadedDisparityEstimator::estimate(Image &left, Image &ri
               right_img.data(), left_img.data(),
               right_stdmean.data(), left_stdmean.data(),
               right_stddev.data(), left_stddev.data(),
-              win_size, -max_disparity, min_disparity);
+              win_size, -max_disparity, -min_disparity);
 
     //Wait that disparity jobs have been finished
     pool.wait();

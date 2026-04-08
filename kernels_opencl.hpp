@@ -1,10 +1,8 @@
 
 
-
-
 inline float window_stdmean(__global const uchar *pixels, const int w, const int h, int x, int y, const int win_size)
 {
-    int ws = (win_size - 1) / 2;
+    int ws = win_size >> 1;
 
     int mean_sum = 0;
     for (int ky = -ws; ky <= ws; ky++) {
@@ -21,7 +19,8 @@ inline float window_stdmean(__global const uchar *pixels, const int w, const int
 
 inline float window_stddev(__global const uchar *pixels, const int w, const int h, float mean, int x, int y, const int win_size)
 {
-    int ws = (win_size - 1) / 2;
+    int ws = win_size >> 1;
+
     float sum = 0;
     for (int ky = -ws; ky <= ws; ky++) {
         for (int kx = -ws; kx <= ws; kx++) {
@@ -47,7 +46,7 @@ inline float ZNCC(__global const float *left_img,     __global const float *righ
                   const int width, const int height,
                   int x, int y, int x_offset, const int win_size)
 {
-    int ws = (win_size - 1) / 2;
+    int ws = win_size >> 1;
 
     float lmean = left_stdmean[y * width + x];
     float rmean = right_stdmean[y * width + max(x - x_offset, 0)];
@@ -60,8 +59,11 @@ inline float ZNCC(__global const float *left_img,     __global const float *righ
         int ny = min(max(y + ky, 0), height-1);
 
         for (int kx = -ws; kx <= ws; kx++) {
-            int nx0 = min(max(x + kx,            0), width-1);
-            int nx1 = min(max(x + kx - x_offset, 0), width-1);
+            //int nx0 = min(max(x + kx,            0), width-1);
+            //int nx1 = min(max(x + kx - x_offset, 0), width-1);
+
+            int nx0 = x + kx;
+            int nx1 = x + kx - x_offset;
 
             cc += (left_img[ny * width + nx0] - lmean) * (right_img[ny * width + nx1] - rmean);
         }
@@ -90,9 +92,21 @@ __kernel void disparity(__global uchar *disp,
     if (x >= width || y >= height)
         return;
 
+    int ws = win_size >> 1;
+
+    int min_disp = max(min_disparity, x - width + ws + 1);
+    int max_disp = min(max_disparity, x         - ws);
+
+    if (x + ws >= width ||
+        x - ws < 0 ||
+        min_disp > max_disp) {
+        disp[y * width + x] = 0;
+        return;
+    }
+
     int best_disp = 0;
     float best_zncc = -10000.0f;
-    for (int d = min_disparity; d <= max_disparity; d++) {
+    for (int d = min_disparity; d <= max_disp; d++) {
 
         float z = ZNCC(left_img, right_img,
                        left_stdmean, right_stdmean,
@@ -135,7 +149,3 @@ __kernel void preprocess(__global const uchar *input_img,
 
 
 }
-
-
-
-

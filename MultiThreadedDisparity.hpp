@@ -13,6 +13,9 @@ namespace Disparity
     public:
         DisparityResult estimate(Image &left, Image &right, int win_size, int min_disparity, int max_disparity);
 
+        ThreadPool &getThreadPool() {
+            return pool;
+        }
     private:
         ThreadPool pool;
     };

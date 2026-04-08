@@ -9,6 +9,8 @@ struct OpenCLContext
     ~OpenCLContext();
     bool checkError(cl_int err);
 
+    void printDeviceInfo();
+
     std::vector<cl_platform_id>  platforms;
     cl_device_id                 device;
     cl_context                   context;
