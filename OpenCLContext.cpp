@@ -1,5 +1,6 @@
 #include "OpenCLContext.hpp"
 #include <iostream>
+#include "Utils.hpp"
 
 
 OpenCLContext::OpenCLContext() {
@@ -25,10 +26,36 @@ OpenCLContext::OpenCLContext() {
 
     queue = clCreateCommandQueue(context, device, 0, &err);
 
+
+    std::string kernels_text = Utils::readTextFile("kernels_opencl.hpp");
+
+    const char *kernels_text_c_str = kernels_text.c_str();
+
+    program = clCreateProgramWithSource(context, 1, &kernels_text_c_str, NULL, &err);
+
+    err = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);
+
+    if (checkError(err)) {
+        std::cout << "Failed to build program!" << std::endl;
+
+        size_t log_size;
+        clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
+
+        char* log = new char[log_size];
+        clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
+
+        printf("Build log:\n%s\n", log);
+
+        delete [] log;
+
+        return;
+    }
+
     printDeviceInfo();
 }
 
 OpenCLContext::~OpenCLContext() {
+    clReleaseProgram(program);
     clReleaseCommandQueue(queue);
     clReleaseContext(context);
 }

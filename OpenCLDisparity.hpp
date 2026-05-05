@@ -12,7 +12,7 @@ namespace Disparity
 class OpenCLDisparityEstimator: public DisparityEstimator
 {
 public:
-    OpenCLDisparityEstimator(std::shared_ptr<OpenCLContext> c);
+    OpenCLDisparityEstimator();
     ~OpenCLDisparityEstimator();
 
     DisparityResult estimate(Image &left, Image &right, int win_size, int min_disparity, int max_disparity);
@@ -41,24 +41,16 @@ private:
 
     void checkBufferSize(int w, int h);
 
-    cl_program program;
-
     cl_kernel  preprocessing_kernel;
     cl_kernel  disparity_kernel;
-
-    cl_mem     left_input_buffer;
-    cl_mem     right_input_buffer;
 
     cl_mem     left_output_buffer;
     cl_mem     right_output_buffer;
 
     cl_mem     tmp_buffers[6];
 
-
     int image_w;
     int image_h;
-
-    std::shared_ptr<OpenCLContext> context;
 };
 
 };

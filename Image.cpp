@@ -42,14 +42,11 @@ void Image::save(std::string filename)
     lodepng::encode(filename, pixels, width, height, color_type);
 }
 
-Image Image::resized(int new_width, int new_height)
+void Image::resize(int new_width, int new_height)
 {
-    Image new_image;
-    new_image.width = new_width;
-    new_image.height = new_height;
-    new_image.bytes_per_pixel = bytes_per_pixel;
+    std::vector<uint8_t> new_pixels;
 
-    new_image.pixels.reserve(new_width*new_height*bytes_per_pixel);
+    new_pixels.reserve(new_width*new_height*bytes_per_pixel);
 
     for (int y = 0; y < new_height; y++) {
         for (int x = 0; x < new_width; x++) {
@@ -57,18 +54,22 @@ Image Image::resized(int new_width, int new_height)
             int src_y = y*height / new_height;
 
             for (int c = 0; c < bytes_per_pixel; c++) {
-                new_image.pixels.push_back(pixels[(src_y*width + src_x)*bytes_per_pixel + c]);
+                new_pixels.push_back(pixels[(src_y*width + src_x)*bytes_per_pixel + c]);
             }
         }
     }
 
-    return new_image;
+    pixels = new_pixels;
+    width = new_width;
+    height = new_height;
 }
 
-Image Image::downsample()
+void Image::downsample()
 {
-    Image new_img;
-    new_img.allocate(width / 2, height / 2, bytes_per_pixel);
+    int new_width = width / 2;
+    int new_height = height / 2;
+
+    std::vector<uint8_t> new_pixels(new_width*new_height*bytes_per_pixel);
 
     static const std::array<int, 5*5> kernel = {
     1,  4,  6,  4, 1,
@@ -99,36 +100,32 @@ Image Image::downsample()
             }
 
             for (int c = 0; c < bytes_per_pixel; c++) {
-                new_img.pixels[(y * new_img.width + x)*bytes_per_pixel + c] = sample[c]/256;
+                new_pixels[(y * new_width + x)*bytes_per_pixel + c] = sample[c]/256;
             }
         }
     }
-    return new_img;
+
+    pixels = new_pixels;
+    width = new_width;
+    height = new_height;
 }
 
-Image Image::downsample(int times)
+void Image::downsample(int times)
 {
-    Image new_img = *this;
     for (int i = 0; i < times; i++) {
-        Image n = new_img.downsample();
-        new_img = n;
+        downsample();
     }
-    return new_img;
 }
 
-Image Image::toGrayscale(const std::array<float, 3> &coeff)
+void Image::convertToGrayscale(const std::array<float, 3> &coeff)
 {
-    Image new_image;
-    new_image.width = width;
-    new_image.height = height;
-    new_image.bytes_per_pixel = 1;
-
     if (bytes_per_pixel == 1) {
-        new_image.pixels = pixels;
-        return new_image;
+        return;
     }
 
-    new_image.pixels.reserve(width*height);
+    std::vector<uint8_t> new_pixels;
+
+    new_pixels.reserve(width*height);
 
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
@@ -138,10 +135,13 @@ Image Image::toGrayscale(const std::array<float, 3> &coeff)
             }
             value = std::clamp(value, 0.0f, 255.0f);
 
-            new_image.pixels.push_back(static_cast<uint8_t>(value));
+            new_pixels.push_back(static_cast<uint8_t>(value));
         }
     }
-    return new_image;
+
+
+    bytes_per_pixel = 1;
+    pixels = new_pixels;
 }
 
 void Image::allocate(int w, int h, int bpp)

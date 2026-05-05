@@ -18,15 +18,18 @@ struct Image
         load(filename);
     }
 
-    void load(std::string filename);
-    void save(std::string filename);
-    void allocate(int w, int h, int bpp = 1);
+    virtual ~Image() {};
 
-    Image downsample();
-    Image downsample(int times);
+    virtual void load(std::string filename);
+    virtual void save(std::string filename);
+    virtual void allocate(int w, int h, int bpp = 1);
 
-    Image resized(int new_width, int new_height);
-    Image toGrayscale(const std::array<float, 3> &coeff);
+    virtual void downsample();
+    virtual void downsample(int times);
+
+    virtual void resize(int new_width, int new_height);
+    virtual void convertToGrayscale(const std::array<float, 3> &coeff);
+
 
     int width;
     int height;

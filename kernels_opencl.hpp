@@ -120,7 +120,7 @@ __kernel void disparity(__global uchar *disp,
         }
     }
 
-    disp[y * width + x] = abs(best_disp);
+    disp[y * width + x] = abs(best_disp);    uchar pixel[4];
 }
 
 
@@ -149,3 +149,103 @@ __kernel void preprocess(__global const uchar *input_img,
 
 
 }
+
+
+__kernel void image_filter2d(__global const uchar *input_img, __global uchar *output_img, const int width, const int height, const int bytes_per_pixel, __global const uchar *filter, int filter_size)
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+
+    if (x >= width || y >= height)
+        return;
+
+    int ws = filter_size >> 1;
+
+    int div = 0;
+    int sum[4] = {0, 0, 0, 0};
+
+    for (int ky = 0; ky < filter_size; ky++) {
+        int iy = y + ky - ws;
+        for (int kx = 0; kx < filter_size; kx++) {
+            int ix = x + kx - ws;
+
+            if (iy < 0 || iy >= height ||
+                ix < 0 || ix >= width) {
+                continue;
+            }
+
+            int k = filter[ky * filter_size + kx];
+            for (int i = 0; i < bytes_per_pixel; i++) {
+                sum[i] += k*input_img[(iy * width + ix)*bytes_per_pixel + i];
+            }
+
+            div += k;
+        }
+    }
+
+
+    for (int i = 0; i < bytes_per_pixel; i++) {
+        output_img[(y * width + x)*bytes_per_pixel + i] = (uchar)max(min(sum[i] / div, 255), 0);
+    }
+}
+
+
+
+__kernel void image_resize(__global const uchar *input_img, __global uchar *output_img, const int width, const int height, const int out_width, const int out_height, const int bytes_per_pixel)
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+
+    if (x >= out_width || y >= out_height)
+        return;
+
+
+    float x_coord = ((float)x / (out_width-1)) * (width-1);
+    float y_coord = ((float)y / (out_height-1)) * (height-1);
+
+    float fx = x_coord - floor(x_coord);
+    float fy = y_coord - floor(y_coord);
+
+    int sx = (int)x_coord;
+    int sy = (int)y_coord;
+
+    float out[4];
+    for (int i = 0; i < bytes_per_pixel; i++) {
+        float c0 = (float)input_img[(sy                  * width + sx                )*bytes_per_pixel + i];
+        float c1 = (float)input_img[(sy                  * width + min(sx+1, width-1))*bytes_per_pixel + i];
+        float c2 = (float)input_img[(min(sy+1, height-1) * width + sx                )*bytes_per_pixel + i];
+        float c3 = (float)input_img[(min(sy+1, height-1) * width + min(sx+1, width-1))*bytes_per_pixel + i];
+
+
+        float vc0 = fx * c1 + (1.0f - fx)*c0;
+        float vc1 = fx * c3 + (1.0f - fx)*c2;
+
+        out[i] = vc1 * fy + (1.0f - fy)*vc0;
+    }
+
+    for (int i = 0; i < bytes_per_pixel; i++) {
+        output_img[(y * out_width + x)*bytes_per_pixel + i] = (uchar)max(min(out[i], 255.0f), 0.0f);
+    }
+
+}
+
+
+__kernel void image_to_grayscale(__global const uchar *input_img, __global uchar *output_img, const int width, const int height, const int bytes_per_pixel, const float r_coef, const float g_coef, const float b_coef)
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+
+    if (x >= width || y >= height)
+        return;
+
+
+    float out = 0.0f;
+
+    out += (float)input_img[(y*width + x)*bytes_per_pixel + 0] * r_coef;
+    out += (float)input_img[(y*width + x)*bytes_per_pixel + 1] * g_coef;
+    out += (float)input_img[(y*width + x)*bytes_per_pixel + 2] * b_coef;
+
+    output_img[y*width + x] = (uchar)max(min(out, 255.0f), 0.0f);
+}
+
+
