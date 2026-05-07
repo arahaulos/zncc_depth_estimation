@@ -126,6 +126,8 @@ void disparity(ThreadPool &pool, Image &disp,
 
 DisparityResult MultiThreadedDisparityEstimator::estimate(Image &left, Image &right, int win_size, int min_disparity, int max_disparity)
 {
+    auto &prof = Utils::Profiler::getInstance();
+
     //Make sure that window size is odd
     win_size = win_size | 0x1;
 
@@ -145,34 +147,40 @@ DisparityResult MultiThreadedDisparityEstimator::estimate(Image &left, Image &ri
     std::vector<float> left_stddev(width*height + 8);
     std::vector<float> right_stddev(width*height + 8);
 
-    for (int y = 0; y < height; y += lines_per_task) {
-        //Job is lambda wrapped with std::function
-        //Lambda captures arguments and calls function which does actual processing job
-        pool.addWork( [=, &left,  &left_img,  &left_stdmean,  &left_stddev]  {
-            disparityPreprocessScanlines(y, win_size, left,  left_img,  left_stdmean,  left_stddev);
-        });
-        pool.addWork( [=, &right, &right_img, &right_stdmean, &right_stddev] {
-            disparityPreprocessScanlines(y, win_size, right, right_img, right_stdmean, right_stddev);
-        });
+    {
+        auto pg = prof.section("disparity_precompute");
+        for (int y = 0; y < height; y += lines_per_task) {
+            //Job is lambda wrapped with std::function
+            //Lambda captures arguments and calls function which does actual processing job
+            pool.addWork( [=, &left,  &left_img,  &left_stdmean,  &left_stddev]  {
+                disparityPreprocessScanlines(y, win_size, left,  left_img,  left_stdmean,  left_stddev);
+            });
+            pool.addWork( [=, &right, &right_img, &right_stdmean, &right_stddev] {
+                disparityPreprocessScanlines(y, win_size, right, right_img, right_stdmean, right_stddev);
+            });
+        }
+
+        //Wait that preprocessing is finished before starting disparity processing
+        pool.wait();
     }
 
-    //Wait that preprocessing is finished before starting disparity processing
-    pool.wait();
+    {
+        auto pg = prof.section("disparity_processing");
+        disparity(pool, result.leftToRight,
+                left_img.data(), right_img.data(),
+                left_stdmean.data(), right_stdmean.data(),
+                left_stddev.data(), right_stddev.data(),
+                win_size, min_disparity, max_disparity);
 
-    disparity(pool, result.leftToRight,
-              left_img.data(), right_img.data(),
-              left_stdmean.data(), right_stdmean.data(),
-              left_stddev.data(), right_stddev.data(),
-              win_size, min_disparity, max_disparity);
+        disparity(pool, result.rightToLeft,
+                right_img.data(), left_img.data(),
+                right_stdmean.data(), left_stdmean.data(),
+                right_stddev.data(), left_stddev.data(),
+                win_size, -max_disparity, -min_disparity);
 
-    disparity(pool, result.rightToLeft,
-              right_img.data(), left_img.data(),
-              right_stdmean.data(), left_stdmean.data(),
-              right_stddev.data(), left_stddev.data(),
-              win_size, -max_disparity, -min_disparity);
-
-    //Wait that disparity jobs have been finished
-    pool.wait();
+        //Wait that disparity jobs have been finished
+        pool.wait();
+    }
 
     return result;
 }

@@ -10,18 +10,6 @@
 #include "PostProcessing.hpp"
 
 
-enum DisparityEstimatorImplementation {
-    DISPARITY_SERIAL,
-    DISPARITY_MULTITHREADED,
-    DISPARITY_OPENCL
-};
-
-enum ImageImplementation {
-    IMAGE_NORMAL,
-    IMAGE_OPENCL
-};
-
-
 Image estimateDepthMap(std::shared_ptr<Disparity::DisparityEstimator> disp_estimator, Image &left, Image &right, int win_size, int min_disparity, int max_disparity)
 {
     auto &prof = Utils::Profiler::getInstance();
@@ -50,6 +38,11 @@ Image estimateDepthMap(std::shared_ptr<Disparity::DisparityEstimator> disp_estim
 }
 
 
+enum DisparityEstimatorImplementation {
+    DISPARITY_SERIAL,
+    DISPARITY_MULTITHREADED,
+    DISPARITY_OPENCL
+};
 std::shared_ptr<Disparity::DisparityEstimator> createDisparityEstimator(DisparityEstimatorImplementation implementation)
 {
 
@@ -69,6 +62,10 @@ std::shared_ptr<Disparity::DisparityEstimator> createDisparityEstimator(Disparit
 }
 
 
+enum ImageImplementation {
+    IMAGE_NORMAL,
+    IMAGE_OPENCL
+};
 std::pair<std::unique_ptr<Image>, std::unique_ptr<Image>> loadTestImages(std::string left_filepath, std::string right_filepath, ImageImplementation image_type)
 {
     std::array<float, 3> graycoeff {0.2126, 0.7152, 0.0722};
@@ -166,7 +163,6 @@ void benchOpenCLImplementation(int window_size = 9) {
 int main()
 {
     benchOpenCLImplementation();
-
     //benchMultiThreadedImpelementation({1, 2, 4, 8, 16, 32, 64});
     return 0;
 }
