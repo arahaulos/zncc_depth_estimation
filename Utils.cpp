@@ -48,23 +48,6 @@ Profiler::Profiler() {
 
 }
 
-
-void Profiler::sectionStart(const std::string &section_name)
-{
-    uint64_t timestamp = timestampUs();
-    if (start_time_points.find(section_name) != start_time_points.end()) {
-        start_time_points[section_name].push_back(timestamp);
-    } else {
-        start_time_points[section_name] = {timestamp};
-        end_time_points[section_name] = {};
-    }
-}
-
-void Profiler::sectionEnd(const std::string &section_name)
-{
-    end_time_points[section_name].push_back(timestampUs());
-}
-
 uint64_t Profiler::getSectionAverageTime(const std::string &section_name)
 {
     std::vector<uint64_t> start_times = start_time_points[section_name];
@@ -111,6 +94,22 @@ void Profiler::clear()
 {
     start_time_points.clear();
     end_time_points.clear();
+}
+
+ProfilerGuard Profiler::section(const std::string &section_name)
+{
+    if (start_time_points.find(section_name) != start_time_points.end()) {
+        start_time_points[section_name].push_back(timestampUs());
+        end_time_points[section_name].push_back(0);
+
+        return ProfilerGuard(end_time_points[section_name], end_time_points[section_name].size()-1);
+
+    } else {
+        start_time_points[section_name] = {timestampUs()};
+        end_time_points[section_name] = {0};
+
+        return ProfilerGuard(end_time_points[section_name], end_time_points[section_name].size()-1);
+    }
 }
 
 

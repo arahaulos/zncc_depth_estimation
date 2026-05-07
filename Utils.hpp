@@ -12,6 +12,18 @@ namespace Utils
     std::string readTextFile(std::string filename);
 
 
+    struct ProfilerGuard
+    {
+        ProfilerGuard(std::vector<uint64_t> &end_times, size_t index) : vec(end_times), idx(index) {};
+        ~ProfilerGuard() {
+            vec[idx] = timestampUs();
+        }
+
+    private:
+        std::vector<uint64_t> &vec;
+        size_t idx;
+    };
+
     struct Profiler
     {
         Profiler();
@@ -24,11 +36,8 @@ namespace Utils
         }
 
         void clear();
-
-        void sectionStart(const std::string &section);
-        void sectionEnd(const std::string &section);
-
-        void sectionTimes(const std::string &section, std::pair<uint64_t, uint64_t> times);
+        ProfilerGuard section(const std::string &section_name);
+        void sectionTimes(const std::string &section_name, std::pair<uint64_t, uint64_t> times);
 
         uint64_t getSectionAverageTime(const std::string &sectionName);
         std::vector<std::string> getSectionNames();

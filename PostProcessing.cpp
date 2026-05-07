@@ -102,9 +102,6 @@ uint8_t findClosestNonZero(Image &img, int x, int y)
 
 CrossCheckResult crossCheck(Disparity::DisparityResult disparity, int min_disparity, int max_disparity, int max_disp_diff)
 {
-    auto &prof = Utils::Profiler::getInstance();
-    prof.sectionStart("crosscheck");
-
     int width = disparity.leftToRight.width;
     int height = disparity.rightToLeft.height;
 
@@ -127,18 +124,12 @@ CrossCheckResult crossCheck(Disparity::DisparityResult disparity, int min_dispar
         }
     }
 
-
-    prof.sectionEnd("crosscheck");
-
     return result;
 }
 
 
 Image fill(CrossCheckResult &cc_result)
 {
-    auto &prof = Utils::Profiler::getInstance();
-    prof.sectionStart("fill");
-
     Image result;
 
     result = cc_result.output;
@@ -146,8 +137,6 @@ Image fill(CrossCheckResult &cc_result)
     for (std::pair<int,int> p : cc_result.occluded) {
         result.pixels[p.second*result.width + p.first] = findClosestNonZeroScanline(cc_result.output, p.first, p.second);
     }
-
-    prof.sectionEnd("fill");
 
     return result;
 }

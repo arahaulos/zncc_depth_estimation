@@ -26,28 +26,27 @@ Image estimateDepthMap(std::shared_ptr<Disparity::DisparityEstimator> disp_estim
 {
     auto &prof = Utils::Profiler::getInstance();
 
-    prof.sectionStart("frame");
-    prof.sectionStart("disparity");
+    auto frame_pg = prof.section("frame"); //End time is recorded when frame_pg goes outside of scope (destructor called)
 
-    Disparity::DisparityResult disparity = disp_estimator->estimate(left, right, win_size, min_disparity, max_disparity);
+    Disparity::DisparityResult disparity;
+    {
+        auto pg = prof.section("disparity");
+        disparity = disp_estimator->estimate(left, right, win_size, min_disparity, max_disparity);
+    }
 
-    prof.sectionEnd("disparity");
-    prof.sectionStart("crosscheck");
+    PostProcessing::CrossCheckResult cc_result;
+    {
+        auto pg = prof.section("crosscheck");
+        cc_result = PostProcessing::crossCheck(disparity, min_disparity, max_disparity, 5);
+    }
 
-    //disparity.leftToRight.save("images/left_disp.png");
-    //disparity.rightToLeft.save("images/right_disp.png");
+    Image result;
+    {
+        auto pg = prof.section("fill");
+        result = PostProcessing::fill(cc_result);
+    }
 
-    PostProcessing::CrossCheckResult cc_result = PostProcessing::crossCheck(disparity, min_disparity, max_disparity, 5);
-
-    prof.sectionEnd("crosscheck");
-    prof.sectionStart("fill");
-
-    Image filled = PostProcessing::fill(cc_result);
-
-    prof.sectionEnd("fill");
-    prof.sectionEnd("frame");
-
-    return filled;
+    return result;
 }
 
 
