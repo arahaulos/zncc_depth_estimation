@@ -26,8 +26,8 @@ Image estimateDepthMap(std::shared_ptr<Disparity::DisparityEstimator> disp_estim
 {
     Disparity::DisparityResult disparity = disp_estimator->estimate(left, right, win_size, min_disparity, max_disparity);
 
-    //disparity.leftToRight.save("left_disp.png");
-    //disparity.rightToLeft.save("right_disp.png");
+    //disparity.leftToRight.save("images/left_disp.png");
+    //disparity.rightToLeft.save("images/right_disp.png");
 
     PostProcessing::CrossCheckResult cc_result = PostProcessing::crossCheck(disparity, min_disparity, max_disparity, 5);
 
@@ -108,13 +108,57 @@ void benchMultiThreadedImpelementation(std::vector<int> cnts, int window_size = 
 }
 
 
+void benchOpenCLImplementation(int window_size = 9) {
+    auto [left, right] = loadTestImages("images/im0.png", "images/im1.png", IMAGE_NORMAL);
+
+    std::cout << "Test image size: " << left->width << "x" << right->height << std::endl;
+    std::cout << "Window size: " << window_size << "x" << window_size << std::endl;
+
+    std::shared_ptr<Disparity::OpenCLDisparityEstimator> disp_estimator = std::make_shared<Disparity::OpenCLDisparityEstimator>();
+
+    //First test using non tiled implementation
+    disp_estimator->enableTiling(false);
+
+    uint64_t t0 = Utils::timestampUs();
+
+    for (int i = 0; i < 100; i++) {
+        Image depth_map = estimateDepthMap(disp_estimator, *left, *right, 9, 0, 65);
+    }
+
+    uint64_t nontiled_us = (Utils::timestampUs() - t0) / 100;
+
+    std::cout << "Untiled kernel: " << std::setprecision(4) << (static_cast<double>(nontiled_us) / 1000) << " ms" << std::endl;
+
+
+    //Test tiled implementation
+    disp_estimator->enableTiling(true);
+
+    uint64_t t1 = Utils::timestampUs();
+
+    for (int i = 0; i < 100; i++) {
+        Image depth_map = estimateDepthMap(disp_estimator, *left, *right, 9, 0, 65);
+    }
+
+    uint64_t tiled_us = (Utils::timestampUs() - t1) / 100;
+
+    std::cout << "Tiled kernel: " << std::setprecision(4) << (static_cast<double>(tiled_us) / 1000) << " ms" << std::endl;
+
+
+    int64_t diff_us = static_cast<int64_t>(tiled_us) - nontiled_us;
+
+    double diff_percentage = (static_cast<double>(diff_us) / nontiled_us)*100;
+
+    std::cout << "Speed difference: " << diff_percentage << "%" << std::endl;
+
+}
 
 
 int main()
 {
-    //benchMultiThreadedImpelementation({1, 2, 4, 8, 16, 32, 64});
+    benchOpenCLImplementation();
 
-    //return 0;
+    //benchMultiThreadedImpelementation({1, 2, 4, 8, 16, 32, 64});
+    return 0;
 
     int window_size = 9;
 

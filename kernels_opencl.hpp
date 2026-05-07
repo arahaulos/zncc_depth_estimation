@@ -1,4 +1,5 @@
-
+#define TILE_SIZE 16
+#define BATCH_SIZE 16
 
 inline float window_stdmean(__global const uchar *pixels, const int w, const int h, int x, int y, const int win_size)
 {
@@ -120,7 +121,121 @@ __kernel void disparity(__global uchar *disp,
         }
     }
 
-    disp[y * width + x] = abs(best_disp);    uchar pixel[4];
+    disp[y * width + x] = abs(best_disp);
+}
+
+__kernel void disparity2(__global uchar *best_disp,
+                         __global const float *left_img,     __global const float *right_img,
+                         __global const float *left_stdmean, __global const float *right_stdmean,
+                         __global const float *left_stddev,  __global const float *right_stddev,
+                         const int width, const int height, const int win_size,
+                         __local float *left_halo, __local float *right_halo,  const int min_disp, const int max_disp, __global float *best_zncc)
+{
+    int global_x = get_group_id(0) * TILE_SIZE;
+    int global_y = get_group_id(1) * TILE_SIZE;
+
+    int local_x = get_local_id(0);
+    int local_y = get_local_id(1);
+
+    int x = global_x + local_x;
+    int y = global_y + local_y;
+
+    int ws = win_size >> 1;
+
+    //Halo is surrounding area of tile
+    //Calculate halo sizes
+
+    //Left halo width is TILE_SIZE + 2*(window_size / 2)
+    int halo_size = TILE_SIZE + 2*ws;
+
+    //Right halo is bigger, because there is multiple x_offsets to calculate ZNCC
+    int right_halo_width = TILE_SIZE + BATCH_SIZE + 2*ws;
+
+    //Load cooperatively left halo to local memory
+    int lid = local_y * TILE_SIZE + local_x;
+    for (int i = lid; i < halo_size*halo_size; i += TILE_SIZE*TILE_SIZE) {
+        int hx = i % halo_size;
+        int hy = i / halo_size;
+
+        int sx = max(min(global_x + hx - ws, width -1), 0);
+        int sy = max(min(global_y + hy - ws, height-1), 0);
+
+        left_halo[hy * halo_size + hx] = left_img[sy * width + sx];
+    }
+
+    //Load cooperatively right halo to local memory
+    for (int i = lid; i < halo_size*right_halo_width; i += TILE_SIZE*TILE_SIZE) {
+
+        int hx = i % right_halo_width;
+        int hy = i / right_halo_width;
+
+        int sx = max(min(global_x + hx - max_disp - ws, width -1), 0);
+        int sy = max(min(global_y + hy            - ws, height-1), 0);
+
+        right_halo[hy * right_halo_width + hx] = right_img[sy * width + sx];
+    }
+
+    //Syncronize to make sure each worker/thread has finished loading
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    //Because image size is not necessarily divisible by tile size, so some workers are outside of image boundaries
+    if (x >= width || y >= height)
+        return;
+
+    //Load mean and deviations for window
+    float lmean = left_stdmean[y * width + x];
+    float ldev  = left_stddev[y * width + x];
+
+    float batch_best_zncc = -10000;
+    int batch_best_disp = 0;
+    for (int d = min_disp; d <= max_disp; d++) {
+        //Skip when either window is outside of image boundariers
+        //best_zncc buffer is filled with smaller value than kernel batch_best_zncc
+        //This ensures that in vertical edges where is no valid windows, gets filled with 0
+        if (x - d - ws < 0 ||
+            x     - ws < 0 ||
+            x - d + ws >= width ||
+            x     + ws >= width) {
+
+            continue;
+        }
+
+        //Load precomputer mean and devitations values for offset window
+        float rmean = right_stdmean[y * width + x - d];
+        float rdev  = right_stddev [y * width + x - d];
+
+        //Calculate x offset relative to halo
+        int tile_x_offset = max_disp - d;
+
+
+        //Calculate zncc
+        float cc = 0.0f;
+        for (int ky = 0; ky <= ws*2; ky++) {
+            int hy = local_y + ky;
+            for (int kx = 0; kx <= ws*2; kx++) {
+                int hx  = local_x + kx;
+                int hx2 = local_x + kx + tile_x_offset;
+
+                cc += (left_halo[hy * halo_size + hx] - lmean) * (right_halo[hy * right_halo_width + hx2] - rmean);
+            }
+        }
+
+        float denom = ldev * rdev;
+        if (denom > 0.0001f) {
+            float zncc = cc / denom;
+
+            if (batch_best_zncc < zncc) {
+                batch_best_zncc = zncc;
+                batch_best_disp = d;
+            }
+        }
+    }
+
+    //Check if best zncc value in this batch is greater than previous value
+    if (best_zncc[y * width + x] < batch_best_zncc) {
+        best_zncc[y * width + x] = batch_best_zncc;
+        best_disp[y * width + x] = abs(batch_best_disp);
+    }
 }
 
 
@@ -247,5 +362,7 @@ __kernel void image_to_grayscale(__global const uchar *input_img, __global uchar
 
     output_img[y*width + x] = (uchar)max(min(out, 255.0f), 0.0f);
 }
+
+
 
 
