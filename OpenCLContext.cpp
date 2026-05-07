@@ -24,7 +24,7 @@ OpenCLContext::OpenCLContext() {
 
     context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
 
-    queue = clCreateCommandQueue(context, device, 0, &err);
+    queue = clCreateCommandQueue(context, device, CL_QUEUE_PROFILING_ENABLE, &err);
 
 
     std::string kernels_text = Utils::readTextFile("kernels_opencl.hpp");
@@ -101,4 +101,27 @@ void OpenCLContext::printDeviceInfo()
         std::cout << work_item_sizes[i] << " ";
     }
     std::cout << std::endl;
+}
+
+std::pair<uint64_t, uint64_t> OpenCLContext::getProfilingResults(cl_event event)
+{
+    cl_ulong start, end;
+    clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &start, NULL);
+    clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &end,   NULL);
+
+    clReleaseEvent(event);
+
+    return {start / 1000, end / 1000};
+}
+
+std::pair<uint64_t, uint64_t> OpenCLContext::getProfilingResults(cl_event first_event, cl_event last_event)
+{
+    cl_ulong start, end;
+    clGetEventProfilingInfo(first_event, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &start, NULL);
+    clGetEventProfilingInfo(last_event, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &end,   NULL);
+
+    clReleaseEvent(first_event);
+    clReleaseEvent(last_event);
+
+    return {start / 1000, end / 1000};
 }

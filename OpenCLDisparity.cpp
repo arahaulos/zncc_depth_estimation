@@ -58,7 +58,18 @@ OpenCLDisparityEstimator::~OpenCLDisparityEstimator() {
 
 
 DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, int win_size, int min_disparity, int max_disparity) {
+
     auto &ctx = OpenCLContext::getInstance();
+    auto &prof = Utils::Profiler::getInstance();
+
+    cl_event precompute_start;
+    cl_event precompute_end;
+
+    cl_event disparity_start;
+    cl_event disparity_end;
+
+    cl_event read_result_start;
+    cl_event read_result_end;
 
     int width = left.width;
     int height = left.height;
@@ -76,7 +87,6 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
     //Check that buffer are allocated and right size
     checkBufferSize(width, height);
 
-
     bool temp_input_buffers = false;
 
     cl_mem left_input_buffer;
@@ -88,7 +98,6 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
         right_input_buffer = dynamic_cast<OpenCLImage&>(right).getOpenCLBuffer();
     } catch (...) {
         //Okay inputs are not OpenCLImages, lets allocate input buffers and send pixel data to GPU mem
-
         temp_input_buffers = true;
 
         left_input_buffer   = clCreateBuffer(ctx.context, CL_MEM_READ_ONLY, width*height*sizeof(uint8_t), NULL, NULL);
@@ -99,19 +108,13 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
         clEnqueueWriteBuffer(ctx.queue, right_input_buffer, CL_FALSE, 0, width*height*sizeof(uint8_t), right.pixels.data(), 0, NULL, NULL);
     }
 
-
-
     //Run preprocessing for left image
     setPreprocessingKernelArgs(left_input_buffer, tmp_buffers[0], tmp_buffers[1], tmp_buffers[2], width, height, win_size);
-    clEnqueueNDRangeKernel(ctx.queue, preprocessing_kernel, 2, NULL, global_work_size, NULL, 0, NULL, NULL);
+    clEnqueueNDRangeKernel(ctx.queue, preprocessing_kernel, 2, NULL, global_work_size, NULL, 0, NULL, &precompute_start);
 
     //Run preprocessing for right image
     setPreprocessingKernelArgs(right_input_buffer, tmp_buffers[3], tmp_buffers[4], tmp_buffers[5], width, height, win_size);
-    clEnqueueNDRangeKernel(ctx.queue, preprocessing_kernel, 2, NULL, global_work_size, NULL, 0, NULL, NULL);
-
-
-    uint64_t t0 = Utils::timestampUs();
-
+    clEnqueueNDRangeKernel(ctx.queue, preprocessing_kernel, 2, NULL, global_work_size, NULL, 0, NULL, &precompute_end);
 
     if (use_tiling) {
         //Round up image size for global work dimensions
@@ -134,7 +137,7 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
                                     tmp_buffers[2], tmp_buffers[5],
                                     width, height, win_size, d, std::min(d + BATCH_SIZE, max_disparity), tmp_buffers[6]);
 
-            clEnqueueNDRangeKernel(ctx.queue, disparity_kernel2, 2, NULL, global_work_size2, local_work_size2, 0, NULL, NULL);
+            clEnqueueNDRangeKernel(ctx.queue, disparity_kernel2, 2, NULL, global_work_size2, local_work_size2, 0, NULL, (d == min_disparity ? &disparity_start : NULL));
         }
 
         //Same for right to left
@@ -145,12 +148,10 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
                                     tmp_buffers[3], tmp_buffers[0],
                                     tmp_buffers[4], tmp_buffers[1],
                                     tmp_buffers[5], tmp_buffers[2],
-                                    width, height, win_size, d, std::min(d + BATCH_SIZE, max_disparity), tmp_buffers[6]);
+                                    width, height, win_size, d, std::min(d + BATCH_SIZE, -min_disparity), tmp_buffers[6]);
 
-            clEnqueueNDRangeKernel(ctx.queue, disparity_kernel2, 2, NULL, global_work_size2, local_work_size2, 0, NULL, NULL);
+            clEnqueueNDRangeKernel(ctx.queue, disparity_kernel2, 2, NULL, global_work_size2, local_work_size2, 0, NULL, (d + BATCH_SIZE >= -min_disparity ? &disparity_end : NULL));
         }
-
-
     } else {
 
         //Run disparity algorithm for left to right image
@@ -160,7 +161,7 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
                             tmp_buffers[2], tmp_buffers[5],
                             width, height, win_size, min_disparity, max_disparity);
 
-        clEnqueueNDRangeKernel(ctx.queue, disparity_kernel, 2, NULL, global_work_size, NULL, 0, NULL, NULL);
+        clEnqueueNDRangeKernel(ctx.queue, disparity_kernel, 2, NULL, global_work_size, NULL, 0, NULL, &disparity_start);
 
         //Run disparity algorithm for right to left image
         setDisparityKernelArgs(right_output_buffer,
@@ -169,25 +170,24 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
                             tmp_buffers[5], tmp_buffers[2],
                             width, height, win_size, -max_disparity, -min_disparity);
 
-        clEnqueueNDRangeKernel(ctx.queue, disparity_kernel, 2, NULL, global_work_size, NULL, 0, NULL, NULL);
+        clEnqueueNDRangeKernel(ctx.queue, disparity_kernel, 2, NULL, global_work_size, NULL, 0, NULL, &disparity_end);
     }
+
 
     //Read output buffers from GPU mem
     //Use blocking flag, which means that call will blocked until everything is executed
-    clEnqueueReadBuffer(ctx.queue, left_output_buffer, CL_TRUE, 0, width*height*sizeof(uint8_t), result.leftToRight.pixels.data(), 0, NULL, NULL);
-    clEnqueueReadBuffer(ctx.queue, right_output_buffer, CL_TRUE, 0, width*height*sizeof(uint8_t), result.rightToLeft.pixels.data(), 0, NULL, NULL);
-
-
-    uint64_t disp_time_us = Utils::timestampUs() - t0;
-
-    //std::cout <<disp_time_us / 1000 << std::endl;
-
+    clEnqueueReadBuffer(ctx.queue, left_output_buffer, CL_TRUE, 0, width*height*sizeof(uint8_t), result.leftToRight.pixels.data(), 0, NULL, &read_result_start);
+    clEnqueueReadBuffer(ctx.queue, right_output_buffer, CL_TRUE, 0, width*height*sizeof(uint8_t), result.rightToLeft.pixels.data(), 0, NULL, &read_result_end);
 
     //Temporary input buffers are allocated when input images are not OpenCLImages. Lets release memory
     if (temp_input_buffers) {
         clReleaseMemObject(left_input_buffer);
         clReleaseMemObject(right_input_buffer);
     }
+
+    prof.sectionTimes("disparity_precompute", ctx.getProfilingResults(precompute_start, precompute_end));
+    prof.sectionTimes("disparity_kernels", ctx.getProfilingResults(disparity_start, disparity_end));
+    prof.sectionTimes("disparity_read_result", ctx.getProfilingResults(read_result_start, read_result_end));
 
     return result;
 }

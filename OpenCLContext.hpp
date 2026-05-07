@@ -21,6 +21,9 @@ struct OpenCLContext
 
     void printDeviceInfo();
 
+    std::pair<uint64_t, uint64_t> getProfilingResults(cl_event event);
+    std::pair<uint64_t, uint64_t> getProfilingResults(cl_event first_event, cl_event last_event);
+
     std::vector<cl_platform_id>  platforms;
     cl_device_id                 device;
     cl_context                   context;
