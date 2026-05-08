@@ -10,13 +10,13 @@ namespace Disparity
 {
 
 
-Image disparity(float *left_img, float *right_img,
-                 float *left_stdmean, float *right_stdmean,
-                 float *left_stddev, float *right_stddev,
-                 int width, int height, int win_size,
-                 int min_disparity, int max_disparity)
+void disparity(Image &disp,
+               float *left_img, float *right_img,
+               float *left_stdmean, float *right_stdmean,
+               float *left_stddev, float *right_stddev,
+               int width, int height, int win_size,
+               int min_disparity, int max_disparity)
 {
-    Image disp;
     disp.allocate(width, height, 1);
 
     int ws = (win_size-1)/2;
@@ -71,14 +71,15 @@ Image disparity(float *left_img, float *right_img,
             disp.pixels[y * width + x] = std::abs(best_disp);
         }
     }
-
-    return disp;
 }
 
 
 
 DisparityResult SerialDisparityEstimator::estimate(Image &left, Image &right, int win_size, int min_disparity, int max_disparity)
 {
+    left.copyDeviceToHost();
+    right.copyDeviceToHost();
+
     //Make sure that window size is odd
     win_size = win_size | 0x1;
 
@@ -110,15 +111,20 @@ DisparityResult SerialDisparityEstimator::estimate(Image &left, Image &right, in
 
     DisparityResult result;
 
-    result.leftToRight = disparity(left_img.data(), right_img.data(),
-                                   left_stdmean.data(), right_stdmean.data(),
-                                   left_stddev.data(), right_stddev.data(),
-                                   width, height, win_size, min_disparity, max_disparity);
+    result.leftToRight = std::make_shared<Image>();
+    result.rightToLeft = std::make_shared<Image>();
 
-    result.rightToLeft = disparity(right_img.data(), left_img.data(),
-                                   right_stdmean.data(), left_stdmean.data(),
-                                   right_stddev.data(), left_stddev.data(),
-                                   width, height, win_size, -max_disparity, -min_disparity);
+    disparity(*result.leftToRight,
+              left_img.data(), right_img.data(),
+              left_stdmean.data(), right_stdmean.data(),
+              left_stddev.data(), right_stddev.data(),
+              width, height, win_size, min_disparity, max_disparity);
+
+    disparity(*result.rightToLeft,
+              right_img.data(), left_img.data(),
+              right_stdmean.data(), left_stdmean.data(),
+              right_stddev.data(), left_stddev.data(),
+              width, height, win_size, -max_disparity, -min_disparity);
 
     return result;
 }

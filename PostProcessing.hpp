@@ -2,21 +2,20 @@
 
 #include "Image.hpp"
 #include "Disparity.hpp"
-#include <vector>
-#include <tuple>
 
 
-namespace PostProcessing
+namespace Disparity
 {
-    typedef std::vector<std::pair<int,int>> OccludedPixels;
 
-    struct CrossCheckResult
-    {
-        OccludedPixels occluded;
-        Image output;
-    };
+class PostProcessor
+{
 
-    CrossCheckResult crossCheck(Disparity::DisparityResult disparity, int min_disparity, int max_disparity, int max_disp_diff);
+public:
+    virtual std::shared_ptr<Image> crossCheck(DisparityResult disparity, int min_disparity, int max_disparity, int max_disp_diff);
 
-    Image fill(CrossCheckResult &result);
+    virtual std::shared_ptr<Image> erosion(Image &in);
+
+    virtual std::shared_ptr<Image> fill(Image &in);
+};
+
 }

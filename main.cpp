@@ -1,6 +1,7 @@
 #include <iostream>
-#include <iomanip>
 #include "OpenCLImage.hpp"
+#include "OpenCLPostProcessing.hpp"
+#include "ThreadPool.hpp"
 #include "Utils.hpp"
 #include "Image.hpp"
 
@@ -10,7 +11,10 @@
 #include "PostProcessing.hpp"
 
 
-Image estimateDepthMap(std::shared_ptr<Disparity::DisparityEstimator> disp_estimator, Image &left, Image &right, int win_size, int min_disparity, int max_disparity)
+std::shared_ptr<Image> estimateDepthMap(std::shared_ptr<Disparity::DisparityEstimator> disp_estimator,
+                                        std::shared_ptr<Disparity::PostProcessor> post_processor,
+                                        Image &left, Image &right,
+                                        int win_size, int min_disparity, int max_disparity)
 {
     auto &prof = Utils::Profiler::getInstance();
 
@@ -22,50 +26,26 @@ Image estimateDepthMap(std::shared_ptr<Disparity::DisparityEstimator> disp_estim
         disparity = disp_estimator->estimate(left, right, win_size, min_disparity, max_disparity);
     }
 
-    PostProcessing::CrossCheckResult cc_result;
+    std::shared_ptr<Image> cc_result;
     {
         auto pg = prof.section("crosscheck");
-        cc_result = PostProcessing::crossCheck(disparity, min_disparity, max_disparity, 5);
+        cc_result = post_processor->crossCheck(disparity, min_disparity, max_disparity, 5);
     }
 
-    Image result;
+    std::shared_ptr<Image> result;
     {
         auto pg = prof.section("fill");
-        result = PostProcessing::fill(cc_result);
+
+        cc_result = post_processor->erosion(*cc_result);
+        result = post_processor->fill(*cc_result);
     }
 
     return result;
 }
 
 
-enum DisparityEstimatorImplementation {
-    DISPARITY_SERIAL,
-    DISPARITY_MULTITHREADED,
-    DISPARITY_OPENCL
-};
-std::shared_ptr<Disparity::DisparityEstimator> createDisparityEstimator(DisparityEstimatorImplementation implementation)
-{
 
-    if (implementation == DISPARITY_SERIAL) {
-
-        return std::make_shared<Disparity::SerialDisparityEstimator>();
-
-    } else if (implementation == DISPARITY_MULTITHREADED) {
-
-        return std::make_shared<Disparity::MultiThreadedDisparityEstimator>();
-
-    } else if (implementation == DISPARITY_OPENCL) {
-        return std::make_shared<Disparity::OpenCLDisparityEstimator>();
-    } else {
-        return std::shared_ptr<Disparity::DisparityEstimator>();
-    }
-}
-
-
-enum ImageImplementation {
-    IMAGE_NORMAL,
-    IMAGE_OPENCL
-};
+enum ImageImplementation {IMAGE_NORMAL, IMAGE_OPENCL};
 std::pair<std::unique_ptr<Image>, std::unique_ptr<Image>> loadTestImages(std::string left_filepath, std::string right_filepath, ImageImplementation image_type)
 {
     std::array<float, 3> graycoeff {0.2126, 0.7152, 0.0722};
@@ -101,15 +81,16 @@ void benchMultiThreadedImpelementation(std::vector<int> cnts, int window_size = 
     std::cout << "Test image size: " << left->width << "x" << right->height << std::endl;
     std::cout << "Window size: " << window_size << "x" << window_size << std::endl;
 
-    std::shared_ptr<Disparity::MultiThreadedDisparityEstimator> disp_estimator = std::make_shared<Disparity::MultiThreadedDisparityEstimator>();
+    auto disp_estimator = std::make_shared<Disparity::MultiThreadedDisparityEstimator>();
+    auto post_processor = std::make_shared<Disparity::PostProcessor>();
 
-    Image depth_map;
+    std::shared_ptr<Image> depth_map;
     for (int threads : cnts) {
 
         disp_estimator->getThreadPool().setThreads(threads);
 
         for (int i = 0; i < 10; i++) {
-            depth_map = estimateDepthMap(disp_estimator, *left, *right, 9, 0, 65);
+            depth_map = estimateDepthMap(disp_estimator, post_processor, *left, *right, 9, 0, 65);
         }
 
         std::cout << "\n\nThreads: " << threads << "  Avg frametime: " << prof.getSectionAverageTime("frame") << " ms" << std::endl;
@@ -117,7 +98,7 @@ void benchMultiThreadedImpelementation(std::vector<int> cnts, int window_size = 
         prof.clear();
     }
 
-    depth_map.save("images/disp.png");
+    depth_map->save("images/disp.png");
 }
 
 
@@ -129,18 +110,21 @@ void benchOpenCLImplementation(int window_size = 9) {
     std::cout << "Test image size: " << left->width << "x" << right->height << std::endl;
     std::cout << "Window size: " << window_size << "x" << window_size << std::endl;
 
-    std::shared_ptr<Disparity::OpenCLDisparityEstimator> disp_estimator = std::make_shared<Disparity::OpenCLDisparityEstimator>();
+    auto disp_estimator = std::make_shared<Disparity::OpenCLDisparityEstimator>();
+    auto post_processor = std::make_shared<Disparity::OpenCLPostProcessor>();
 
-    Image depth_map;
+    std::shared_ptr<Image> depth_map;
 
     //First test using non tiled implementation
     disp_estimator->enableTiling(false);
 
     for (int i = 0; i < 100; i++) {
-        depth_map = estimateDepthMap(disp_estimator, *left, *right, 9, 0, 65);
+        depth_map = estimateDepthMap(disp_estimator, post_processor, *left, *right, 9, 0, 65);
     }
 
     std::cout << "\n\nNon tiled implementation: " << std::endl;
+
+    //depth_map.save("images/disp.png");
 
     prof.printAllAverageTimes();
     prof.clear();
@@ -149,14 +133,14 @@ void benchOpenCLImplementation(int window_size = 9) {
     //Test tiled implementation
     disp_estimator->enableTiling(true);
     for (int i = 0; i < 100; i++) {
-        depth_map = estimateDepthMap(disp_estimator, *left, *right, 9, 0, 65);
+        depth_map = estimateDepthMap(disp_estimator, post_processor, *left, *right, 9, 0, 65);
     }
 
     std::cout << "\n\nTiled implementation: " << std::endl;
     prof.printAllAverageTimes();
     prof.clear();
 
-    depth_map.save("images/disp.png");
+    depth_map->save("images/disp.png");
 }
 
 

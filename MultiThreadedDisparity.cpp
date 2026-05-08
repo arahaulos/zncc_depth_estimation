@@ -126,14 +126,21 @@ void disparity(ThreadPool &pool, Image &disp,
 
 DisparityResult MultiThreadedDisparityEstimator::estimate(Image &left, Image &right, int win_size, int min_disparity, int max_disparity)
 {
+    left.copyDeviceToHost();
+    right.copyDeviceToHost();
+
     auto &prof = Utils::Profiler::getInstance();
 
     //Make sure that window size is odd
     win_size = win_size | 0x1;
 
     DisparityResult result;
-    result.leftToRight.allocate(left.width, right.height, 1);
-    result.rightToLeft.allocate(left.width, right.height, 1);
+
+    result.leftToRight = std::make_shared<Image>();
+    result.rightToLeft = std::make_shared<Image>();
+
+    result.leftToRight->allocate(left.width, right.height, 1);
+    result.rightToLeft->allocate(left.width, right.height, 1);
 
     int width = left.width;
     int height = left.height;
@@ -166,13 +173,13 @@ DisparityResult MultiThreadedDisparityEstimator::estimate(Image &left, Image &ri
 
     {
         auto pg = prof.section("disparity_processing");
-        disparity(pool, result.leftToRight,
+        disparity(pool, *result.leftToRight,
                 left_img.data(), right_img.data(),
                 left_stdmean.data(), right_stdmean.data(),
                 left_stddev.data(), right_stddev.data(),
                 win_size, min_disparity, max_disparity);
 
-        disparity(pool, result.rightToLeft,
+        disparity(pool, *result.rightToLeft,
                 right_img.data(), left_img.data(),
                 right_stdmean.data(), left_stdmean.data(),
                 right_stddev.data(), left_stddev.data(),

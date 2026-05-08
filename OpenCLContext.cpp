@@ -68,6 +68,17 @@ bool OpenCLContext::checkError(cl_int err) {
     return false;
 }
 
+cl_kernel OpenCLContext::createKernel(const std::string &name)
+{
+    cl_kernel kernel;
+    cl_int err;;
+    kernel = clCreateKernel(program, name.c_str(), &err);
+    if (checkError(err)) {
+        std::cout << "Failed to create " << name << " kernel!" << std::endl;
+    }
+    return kernel;
+}
+
 
 void OpenCLContext::printDeviceInfo()
 {

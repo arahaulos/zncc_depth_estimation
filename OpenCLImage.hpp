@@ -22,6 +22,8 @@ struct OpenCLImage : public Image
     OpenCLImage& operator=(OpenCLImage other); //Uses copy and swap idiom
     OpenCLImage& operator=(const Image &other);
 
+    void allocate(int w, int h, int bpp = 1) override;
+
     void downsample() override;
     void downsample(int times) override;
     void filter2d(const uint8_t *kernel, int kernel_size);
@@ -32,7 +34,7 @@ struct OpenCLImage : public Image
         return buffer;
     }
 
-    void copyDeviceToHost();
+    void copyDeviceToHost() override;
     void copyHostToDevice();
 
     int getNeededBufferSize() {

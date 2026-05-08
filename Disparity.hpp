@@ -1,14 +1,15 @@
 #pragma once
 
 #include "Image.hpp"
+#include <memory>
 
 namespace Disparity
 {
 
 struct DisparityResult
 {
-    Image leftToRight;
-    Image rightToLeft;
+    std::shared_ptr<Image> leftToRight;
+    std::shared_ptr<Image> rightToLeft;
 };
 
 class DisparityEstimator

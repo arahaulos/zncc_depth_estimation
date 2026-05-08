@@ -1,7 +1,26 @@
 #pragma once
 
+#include <string>
 #include <vector>
 #include <CL/cl.h>
+
+struct LocalBuffer {
+    size_t size;
+};
+
+inline void setKernelArgs(cl_kernel kernel, int index) {};
+
+template<typename... Rest>
+void setKernelArgs(cl_kernel kernel, int index, LocalBuffer local, Rest... rest) {
+    clSetKernelArg(kernel, index, local.size, NULL);
+    setKernelArgs(kernel, index + 1, rest...);
+}
+template<typename T, typename... Rest>
+void setKernelArgs(cl_kernel kernel, int index, T first, Rest... rest) {
+    clSetKernelArg(kernel, index, sizeof(T), &first);
+    setKernelArgs(kernel, index + 1, rest...);
+}
+
 
 struct OpenCLContext
 {
@@ -14,9 +33,9 @@ struct OpenCLContext
         static OpenCLContext instance;
         return instance;
     }
-
     ~OpenCLContext();
 
+    cl_kernel createKernel(const std::string &name);
     bool checkError(cl_int err);
 
     void printDeviceInfo();

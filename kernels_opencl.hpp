@@ -129,7 +129,7 @@ __kernel void disparity2(__global uchar *best_disp,
                          __global const float *left_stdmean, __global const float *right_stdmean,
                          __global const float *left_stddev,  __global const float *right_stddev,
                          const int width, const int height, const int win_size,
-                         __local float *left_halo, __local float *right_halo,  const int min_disp, const int max_disp, __global float *best_zncc)
+                         __local float *left_halo, __local float *right_halo,  const int disp_batch_start, const int disp_batch_end, __global float *best_zncc)
 {
     int global_x = get_group_id(0) * TILE_SIZE;
     int global_y = get_group_id(1) * TILE_SIZE;
@@ -169,8 +169,8 @@ __kernel void disparity2(__global uchar *best_disp,
         int hx = i % right_halo_width;
         int hy = i / right_halo_width;
 
-        int sx = max(min(global_x + hx - max_disp - ws, width -1), 0);
-        int sy = max(min(global_y + hy            - ws, height-1), 0);
+        int sx = max(min(global_x + hx - disp_batch_end - ws + 1, width -1), 0);
+        int sy = max(min(global_y + hy                  - ws    , height-1), 0);
 
         right_halo[hy * right_halo_width + hx] = right_img[sy * width + sx];
     }
@@ -182,13 +182,13 @@ __kernel void disparity2(__global uchar *best_disp,
     if (x >= width || y >= height)
         return;
 
-    //Load mean and deviations for window
+    //Load mean and deviations for left window
     float lmean = left_stdmean[y * width + x];
     float ldev  = left_stddev[y * width + x];
 
     float batch_best_zncc = -10000;
     int batch_best_disp = 0;
-    for (int d = min_disp; d <= max_disp; d++) {
+    for (int d = disp_batch_start; d < disp_batch_end; d++) {
         //Skip when either window is outside of image boundariers
         //best_zncc buffer is filled with smaller value than kernel batch_best_zncc
         //This ensures that in vertical edges where is no valid windows, gets filled with 0
@@ -200,12 +200,12 @@ __kernel void disparity2(__global uchar *best_disp,
             continue;
         }
 
-        //Load precomputer mean and devitations values for offset window
+        //Load precomputer mean and devitations values for offset (right) window
         float rmean = right_stdmean[y * width + x - d];
         float rdev  = right_stddev [y * width + x - d];
 
         //Calculate x offset relative to halo
-        int tile_x_offset = max_disp - d;
+        int tile_x_offset = disp_batch_end - d - 1;
 
 
         //Calculate zncc
@@ -365,4 +365,62 @@ __kernel void image_to_grayscale(__global const uchar *input_img, __global uchar
 
 
 
+
+
+__kernel void crosscheck(__global const uchar *left_img, __global const uchar *right_img, __global uchar *output, const int width, const int height, const int min_disparity, const int max_disparity, const int max_disp_diff)
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+
+    if (x >= width || y >= height)
+        return;
+
+    int leftdp = left_img[y*width + x];
+    int rightdp = right_img[y*width + min(max(x - leftdp, 0), width-1)];
+
+    if (abs(leftdp - rightdp) > max_disp_diff || leftdp == 0 || rightdp == 0) {
+        output[y*width + x] = 0;
+    } else {
+        output[y*width + x] = (leftdp - min_disparity) * 255 / (max_disparity - min_disparity);
+    }
+}
+
+
+
+__kernel void erosion(__global const uchar *input, __global uchar *output, const int width, const int height)
+{
+    int x = get_global_id(0);
+    int y = get_global_id(1);
+
+    if (x >= width || y >= height)
+        return;
+
+    __constant int neightbor_coords[] =
+    {
+        -1, 0,
+         1, 0,
+        -1, 1,
+         0, 1,
+         1, 1,
+        -1, -1,
+         0, -1,
+         1, -1
+    };
+
+    for (int i = 0; i < sizeof(neightbor_coords)/sizeof(int); i += 2) {
+        int nx = x + neightbor_coords[i+0];
+        int ny = y + neightbor_coords[i+1];
+
+        if (nx < 0 || nx >= width ||
+            ny < 0 || ny >= height) {
+            continue;
+        }
+
+        if (input[ny*width + nx] == 0) {
+            output[y*width + x] = 0;
+            return;
+        }
+    }
+    output[y*width + x] = input[y*width + x];
+}
 

@@ -7,7 +7,7 @@
 #include "Utils.hpp"
 
 
-namespace PostProcessing
+namespace Disparity
 {
 
 uint8_t findClosestNonZeroScanline(Image &img, int x, int y)
@@ -100,26 +100,27 @@ uint8_t findClosestNonZero(Image &img, int x, int y)
 
 
 
-CrossCheckResult crossCheck(Disparity::DisparityResult disparity, int min_disparity, int max_disparity, int max_disp_diff)
+std::shared_ptr<Image> PostProcessor::crossCheck(DisparityResult disparity, int min_disparity, int max_disparity, int max_disp_diff)
 {
-    int width = disparity.leftToRight.width;
-    int height = disparity.rightToLeft.height;
+    disparity.leftToRight->copyDeviceToHost();
+    disparity.rightToLeft->copyDeviceToHost();
 
-    CrossCheckResult result;
+    int width = disparity.leftToRight->width;
+    int height = disparity.rightToLeft->height;
 
-    result.output.allocate(width, height, 1);
-    result.occluded.reserve(width*height/4);
+    auto result = std::make_shared<Image>();
+
+    result->allocate(width, height);
 
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            int leftdp = disparity.leftToRight.pixels[y*width + x];
-            int rightdp = std::abs(disparity.rightToLeft.pixels[y*width + std::clamp(x - leftdp, 0, width-1)]);
+            int leftdp = disparity.leftToRight->pixels[y*width + x];
+            int rightdp = disparity.rightToLeft->pixels[y*width + std::clamp(x - leftdp, 0, width-1)];
 
             if (std::abs(leftdp - rightdp) > max_disp_diff || leftdp == 0 || rightdp == 0) {
-                result.output.pixels[y*width + x] = 0;
-                result.occluded.emplace_back(x, y);
+                result->pixels[y*width + x] = 0;
             } else {
-                result.output.pixels[y*width + x] = (leftdp - min_disparity) * 255 / (max_disparity - min_disparity);
+                result->pixels[y*width + x] = (leftdp - min_disparity) * 255 / (max_disparity - min_disparity);
             }
         }
     }
@@ -127,15 +128,95 @@ CrossCheckResult crossCheck(Disparity::DisparityResult disparity, int min_dispar
     return result;
 }
 
-
-Image fill(CrossCheckResult &cc_result)
+std::shared_ptr<Image> PostProcessor::erosion(Image &in)
 {
-    Image result;
+    in.copyDeviceToHost();
 
-    result = cc_result.output;
+    auto out = std::make_shared<Image>(in.width, in.height);
 
-    for (std::pair<int,int> p : cc_result.occluded) {
-        result.pixels[p.second*result.width + p.first] = findClosestNonZeroScanline(cc_result.output, p.first, p.second);
+    auto has_zero_neighbors = [&] (int x, int y) -> bool {
+        static const int neightbor_coords[] =
+        {
+            -1, 0,
+             1, 0,
+            -1, 1,
+             0, 1,
+             1, 1,
+            -1, -1,
+             0, -1,
+             1, -1
+        };
+
+        for (int i = 0; i < sizeof(neightbor_coords)/sizeof(int); i+= 2) {
+            int nx = x + neightbor_coords[i+0];
+            int ny = y + neightbor_coords[i+1];
+
+            if (nx < 0 || nx >= in.width ||
+                ny < 0 || ny >= in.height) {
+                continue;
+            }
+            if (in.pixels[ny*in.width + nx] == 0) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+
+    for (int y = 0; y < in.height; y++) {
+        for (int x = 0; x < in.width; x++) {
+            if (has_zero_neighbors(x, y)) {
+                out->pixels[y*in.width+x] = 0;
+            } else {
+                out->pixels[y*in.width+x] = in.pixels[y*in.width+x];
+            }
+        }
+    }
+    return out;
+}
+
+
+std::shared_ptr<Image> PostProcessor::fill(Image &in)
+{
+    in.copyDeviceToHost();
+
+    auto result = std::make_shared<Image>(in);
+
+    for (int y = 0; y < in.height; y++) {
+        auto output_row = result->pixels.begin() + (y*result->width);
+
+        uint8_t start_color = 0;
+        int start_x = 0;
+
+        for (int x = 0; x < in.width; x++) {
+            uint8_t c = in.pixels[y*in.width + x];
+
+            if (c == 0) {
+                if (start_x < 0) {
+                    start_x = x;
+                }
+                continue;
+            }
+
+            if (start_x >= 0) {
+                uint8_t end_color = c;
+                int end_x = x;
+                int mid_x = (end_x + start_x) / 2;
+
+                if (start_color == 0) {
+                    std::fill(output_row + start_x, output_row + end_x, end_color);
+                } else {
+                    std::fill(output_row + start_x, output_row + mid_x, start_color);
+                    std::fill(output_row + mid_x, output_row + end_x, end_color);
+                }
+            }
+            start_x = -1;
+            start_color = c;
+        }
+
+        if (start_x >= 0) {
+            std::fill(output_row + start_x, output_row + result->width, start_color);
+        }
     }
 
     return result;

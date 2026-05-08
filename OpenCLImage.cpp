@@ -1,8 +1,6 @@
 #include "OpenCLImage.hpp"
 #include "OpenCLContext.hpp"
 #include <CL/cl.h>
-#include <iostream>
-
 
 OpenCLImage::OpenCLImage()
 {
@@ -19,8 +17,6 @@ OpenCLImage::~OpenCLImage()
     clReleaseKernel(resize_kernel);
     clReleaseKernel(grayscale_kernel);
 }
-
-
 
 
 OpenCLImage::OpenCLImage(int w, int h)
@@ -74,11 +70,10 @@ OpenCLImage::OpenCLImage(const OpenCLImage &climg)
 void OpenCLImage::loadKernels()
 {
     auto &ctx = OpenCLContext::getInstance();
-    cl_int err;
 
-    grayscale_kernel = clCreateKernel(ctx.program, "image_to_grayscale", &err);
-    resize_kernel    = clCreateKernel(ctx.program, "image_resize", &err);
-    filter2d_kernel = clCreateKernel(ctx.program, "image_filter2d", &err);
+    grayscale_kernel = ctx.createKernel("image_to_grayscale");
+    resize_kernel    = ctx.createKernel("image_resize");
+    filter2d_kernel  = ctx.createKernel("image_filter2d");
 }
 
 void swap(OpenCLImage &a, OpenCLImage &b)
@@ -114,6 +109,26 @@ OpenCLImage& OpenCLImage::operator=(const Image &img)
     return *this;
 }
 
+void OpenCLImage::allocate(int w, int h, int bpp)
+{
+    auto &ctx = OpenCLContext::getInstance();
+
+    width = w;
+    height = h;
+    bytes_per_pixel = bpp;
+    pixels.resize(w*h*bpp);
+
+    cl_int err;
+    if (getNeededBufferSize() != allocated_buffer_size) {
+        if (allocated_buffer_size > 0) {
+            clReleaseMemObject(buffer);
+        }
+
+        allocated_buffer_size = getNeededBufferSize();
+        buffer = clCreateBuffer(ctx.context, CL_MEM_READ_WRITE, allocated_buffer_size, NULL, &err);
+    }
+}
+
 void OpenCLImage::filter2d(const uint8_t *kernel, int kernel_size)
 {
     //__kernel void image_filtering(__global const uchar *input_img, __global uchar *output_img, const int width, const int height, const int bytes_per_pixel, __global const uchar *filter, int filter_size)
@@ -127,16 +142,7 @@ void OpenCLImage::filter2d(const uint8_t *kernel, int kernel_size)
 
     clEnqueueWriteBuffer(ctx.queue, kernel_buffer, CL_FALSE, 0, kernel_size*kernel_size, kernel, 0, NULL, NULL);
 
-    clSetKernelArg(filter2d_kernel, 0, sizeof(cl_mem), &buffer);
-    clSetKernelArg(filter2d_kernel, 1, sizeof(cl_mem), &new_buffer);
-
-    clSetKernelArg(filter2d_kernel, 2, sizeof(int), &width);
-    clSetKernelArg(filter2d_kernel, 3, sizeof(int), &height);
-    clSetKernelArg(filter2d_kernel, 4, sizeof(int), &bytes_per_pixel);
-
-    clSetKernelArg(filter2d_kernel, 5, sizeof(cl_mem), &kernel_buffer);
-    clSetKernelArg(filter2d_kernel, 6, sizeof(int),    &kernel_size);
-
+    setKernelArgs(filter2d_kernel, 0, buffer, new_buffer, width, height, bytes_per_pixel, kernel_buffer, kernel_size);
     clEnqueueNDRangeKernel(ctx.queue, filter2d_kernel, 2, NULL, global_work_size, NULL, 0, NULL, NULL);
 
     clReleaseMemObject(kernel_buffer);
@@ -167,6 +173,7 @@ void OpenCLImage::downsample(int times)
 }
 
 
+
 void OpenCLImage::resize(int new_width, int new_height)
 {
     //__kernel void image_resize(__global const uchar *input_img, __global uchar *output_img, const int width, const int height, const int out_width, const int out_height, const int bytes_per_pixel)
@@ -177,15 +184,7 @@ void OpenCLImage::resize(int new_width, int new_height)
     cl_int err;
     cl_mem new_buffer = clCreateBuffer(ctx.context, CL_MEM_READ_WRITE, new_width*new_height*bytes_per_pixel, NULL, &err);
 
-    clSetKernelArg(resize_kernel, 0, sizeof(cl_mem), &buffer);
-    clSetKernelArg(resize_kernel, 1, sizeof(cl_mem), &new_buffer);
-
-    clSetKernelArg(resize_kernel, 2, sizeof(int), &width);
-    clSetKernelArg(resize_kernel, 3, sizeof(int), &height);
-    clSetKernelArg(resize_kernel, 4, sizeof(int), &new_width);
-    clSetKernelArg(resize_kernel, 5, sizeof(int), &new_height);
-    clSetKernelArg(resize_kernel, 6, sizeof(int), &bytes_per_pixel);
-
+    setKernelArgs(resize_kernel, 0, buffer, new_buffer, width, height, new_width, new_height, bytes_per_pixel);
     clEnqueueNDRangeKernel(ctx.queue, resize_kernel, 2, NULL, global_work_size, NULL, 0, NULL, NULL);
 
     clReleaseMemObject(buffer);
@@ -210,16 +209,7 @@ void OpenCLImage::convertToGrayscale(const std::array<float, 3> &coeff)
     cl_int err;
     cl_mem new_buffer = clCreateBuffer(ctx.context, CL_MEM_READ_WRITE, width*height, NULL, &err);
 
-    clSetKernelArg(grayscale_kernel, 0, sizeof(cl_mem), &buffer);
-    clSetKernelArg(grayscale_kernel, 1, sizeof(cl_mem), &new_buffer);
-
-    clSetKernelArg(grayscale_kernel, 2, sizeof(int), &width);
-    clSetKernelArg(grayscale_kernel, 3, sizeof(int), &height);
-    clSetKernelArg(grayscale_kernel, 4, sizeof(int), &bytes_per_pixel);
-    clSetKernelArg(grayscale_kernel, 5, sizeof(float), &coeff[0]);
-    clSetKernelArg(grayscale_kernel, 6, sizeof(float), &coeff[1]);
-    clSetKernelArg(grayscale_kernel, 7, sizeof(float), &coeff[2]);
-
+    setKernelArgs(grayscale_kernel, 0, buffer, new_buffer, width, height, bytes_per_pixel, coeff[0], coeff[1], coeff[2]);
     clEnqueueNDRangeKernel(ctx.queue, grayscale_kernel, 2, NULL, global_work_size, NULL, 0, NULL, NULL);
 
     clReleaseMemObject(buffer);

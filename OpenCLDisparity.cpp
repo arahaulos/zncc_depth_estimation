@@ -19,27 +19,9 @@ OpenCLDisparityEstimator::OpenCLDisparityEstimator() {
     image_w = -1;
     image_h = -1;
 
-    cl_int err;
-
-    preprocessing_kernel = clCreateKernel(ctx.program, "preprocess", &err);
-
-    if (ctx.checkError(err)) {
-        std::cout << "Failed to create preprocess kernel!" << std::endl;
-        return;
-    }
-
-    disparity_kernel = clCreateKernel(ctx.program, "disparity", &err);
-
-    if (ctx.checkError(err)) {
-        std::cout << "Failed to create disparity kernel!" << std::endl;
-    }
-
-    disparity_kernel2 = clCreateKernel(ctx.program, "disparity2", &err);
-
-    if (ctx.checkError(err)) {
-        std::cout << "Failed to create disparity2 kernel!" << std::endl;
-    }
-
+    preprocessing_kernel = ctx.createKernel("preprocess");
+    disparity_kernel = ctx.createKernel("disparity");
+    disparity_kernel2 = ctx.createKernel("disparity2");
 
     use_tiling = true;
 }
@@ -68,19 +50,17 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
     cl_event disparity_start;
     cl_event disparity_end;
 
-    cl_event read_result_start;
-    cl_event read_result_end;
-
     int width = left.width;
     int height = left.height;
 
     //Make sure that window size is odd
     win_size = win_size | 0x1;
 
-    DisparityResult result;
+    auto leftToRight = std::make_shared<OpenCLImage>();
+    auto rightToLeft = std::make_shared<OpenCLImage>();
 
-    result.leftToRight.allocate(width, height, 1);
-    result.rightToLeft.allocate(width, height, 1);
+    leftToRight->allocate(width, height, 1);
+    rightToLeft->allocate(width, height, 1);
 
     size_t global_work_size[2] = {(size_t)width, (size_t)height};
 
@@ -109,11 +89,11 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
     }
 
     //Run preprocessing for left image
-    setPreprocessingKernelArgs(left_input_buffer, tmp_buffers[0], tmp_buffers[1], tmp_buffers[2], width, height, win_size);
+    setKernelArgs(preprocessing_kernel, 0, left_input_buffer, tmp_buffers[0], tmp_buffers[1], tmp_buffers[2], width, height, win_size);
     clEnqueueNDRangeKernel(ctx.queue, preprocessing_kernel, 2, NULL, global_work_size, NULL, 0, NULL, &precompute_start);
 
     //Run preprocessing for right image
-    setPreprocessingKernelArgs(right_input_buffer, tmp_buffers[3], tmp_buffers[4], tmp_buffers[5], width, height, win_size);
+    setKernelArgs(preprocessing_kernel, 0, right_input_buffer, tmp_buffers[3], tmp_buffers[4], tmp_buffers[5], width, height, win_size);
     clEnqueueNDRangeKernel(ctx.queue, preprocessing_kernel, 2, NULL, global_work_size, NULL, 0, NULL, &precompute_end);
 
     if (use_tiling) {
@@ -124,6 +104,15 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
         //Tile is work group
         size_t local_work_size2[2] = {(size_t)TILE_SIZE, (size_t)TILE_SIZE};
 
+
+        //Calculate width of local buffers needed
+        int left_halo_width  = TILE_SIZE + (win_size >> 1)*2; //Height for both halos is same
+        int right_halo_width = TILE_SIZE + BATCH_SIZE + (win_size >> 1)*2;
+
+        //Calculate sizes of local buffers
+        size_t left_halo_size = left_halo_width*left_halo_width*sizeof(float);
+        size_t right_halo_size = left_halo_width*right_halo_width*sizeof(float);
+
         float min_zncc = -100000.0f;
 
         clEnqueueFillBuffer(ctx.queue, tmp_buffers[6], &min_zncc, sizeof(float), 0, width*height*sizeof(float), 0, NULL, NULL);
@@ -131,11 +120,14 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
         //Tiled kernel uses batches, so that we don't need to launch for each disparity value
         for (int d = min_disparity; d <= max_disparity; d += BATCH_SIZE) {
             //Set argument for tiled disparity kernel
-            setDisparityKernelArgs2(left_output_buffer,
-                                    tmp_buffers[0], tmp_buffers[3],
-                                    tmp_buffers[1], tmp_buffers[4],
-                                    tmp_buffers[2], tmp_buffers[5],
-                                    width, height, win_size, d, std::min(d + BATCH_SIZE, max_disparity), tmp_buffers[6]);
+            setKernelArgs(disparity_kernel2, 0,
+                          leftToRight->getOpenCLBuffer(),
+                          tmp_buffers[0], tmp_buffers[3],
+                          tmp_buffers[1], tmp_buffers[4],
+                          tmp_buffers[2], tmp_buffers[5],
+                          width, height, win_size,
+                          LocalBuffer{left_halo_size}, LocalBuffer{right_halo_size},
+                          d, std::min(d + BATCH_SIZE, max_disparity + 1), tmp_buffers[6]);
 
             clEnqueueNDRangeKernel(ctx.queue, disparity_kernel2, 2, NULL, global_work_size2, local_work_size2, 0, NULL, (d == min_disparity ? &disparity_start : NULL));
         }
@@ -144,40 +136,39 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
         clEnqueueFillBuffer(ctx.queue, tmp_buffers[6], &min_zncc, sizeof(float), 0, width*height*sizeof(float), 0, NULL, NULL);
 
         for (int d = -max_disparity; d <= -min_disparity; d += BATCH_SIZE) {
-            setDisparityKernelArgs2(right_output_buffer,
-                                    tmp_buffers[3], tmp_buffers[0],
-                                    tmp_buffers[4], tmp_buffers[1],
-                                    tmp_buffers[5], tmp_buffers[2],
-                                    width, height, win_size, d, std::min(d + BATCH_SIZE, -min_disparity), tmp_buffers[6]);
+            setKernelArgs(disparity_kernel2, 0,
+                          rightToLeft->getOpenCLBuffer(),
+                          tmp_buffers[3], tmp_buffers[0],
+                          tmp_buffers[4], tmp_buffers[1],
+                          tmp_buffers[5], tmp_buffers[2],
+                          width, height, win_size,
+                          LocalBuffer{left_halo_size}, LocalBuffer{right_halo_size},
+                          d, std::min(d + BATCH_SIZE, -min_disparity + 1), tmp_buffers[6]);
 
             clEnqueueNDRangeKernel(ctx.queue, disparity_kernel2, 2, NULL, global_work_size2, local_work_size2, 0, NULL, (d + BATCH_SIZE >= -min_disparity ? &disparity_end : NULL));
         }
     } else {
 
         //Run disparity algorithm for left to right image
-        setDisparityKernelArgs(left_output_buffer,
-                            tmp_buffers[0], tmp_buffers[3],
-                            tmp_buffers[1], tmp_buffers[4],
-                            tmp_buffers[2], tmp_buffers[5],
-                            width, height, win_size, min_disparity, max_disparity);
+        setKernelArgs(disparity_kernel, 0,
+                      leftToRight->getOpenCLBuffer(),
+                      tmp_buffers[0], tmp_buffers[3],
+                      tmp_buffers[1], tmp_buffers[4],
+                      tmp_buffers[2], tmp_buffers[5],
+                      width, height, win_size, min_disparity, max_disparity);
 
         clEnqueueNDRangeKernel(ctx.queue, disparity_kernel, 2, NULL, global_work_size, NULL, 0, NULL, &disparity_start);
 
         //Run disparity algorithm for right to left image
-        setDisparityKernelArgs(right_output_buffer,
-                            tmp_buffers[3], tmp_buffers[0],
-                            tmp_buffers[4], tmp_buffers[1],
-                            tmp_buffers[5], tmp_buffers[2],
-                            width, height, win_size, -max_disparity, -min_disparity);
+        setKernelArgs(disparity_kernel, 0,
+                      rightToLeft->getOpenCLBuffer(),
+                      tmp_buffers[3], tmp_buffers[0],
+                      tmp_buffers[4], tmp_buffers[1],
+                      tmp_buffers[5], tmp_buffers[2],
+                      width, height, win_size, -max_disparity, -min_disparity);
 
         clEnqueueNDRangeKernel(ctx.queue, disparity_kernel, 2, NULL, global_work_size, NULL, 0, NULL, &disparity_end);
     }
-
-
-    //Read output buffers from GPU mem
-    //Use blocking flag, which means that call will blocked until everything is executed
-    clEnqueueReadBuffer(ctx.queue, left_output_buffer, CL_TRUE, 0, width*height*sizeof(uint8_t), result.leftToRight.pixels.data(), 0, NULL, &read_result_start);
-    clEnqueueReadBuffer(ctx.queue, right_output_buffer, CL_TRUE, 0, width*height*sizeof(uint8_t), result.rightToLeft.pixels.data(), 0, NULL, &read_result_end);
 
     //Temporary input buffers are allocated when input images are not OpenCLImages. Lets release memory
     if (temp_input_buffers) {
@@ -185,98 +176,17 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
         clReleaseMemObject(right_input_buffer);
     }
 
+    clWaitForEvents(1, &disparity_end);
+
     prof.sectionTimes("disparity_precompute", ctx.getProfilingResults(precompute_start, precompute_end));
     prof.sectionTimes("disparity_kernels", ctx.getProfilingResults(disparity_start, disparity_end));
-    prof.sectionTimes("disparity_read_result", ctx.getProfilingResults(read_result_start, read_result_end));
 
-    return result;
+    return {leftToRight, rightToLeft};
 }
-
-void OpenCLDisparityEstimator::setPreprocessingKernelArgs(cl_mem input_img,
-                                                          cl_mem output_img,
-                                                          cl_mem output_stdmean,
-                                                          cl_mem output_stddev,
-                                                          int width,
-                                                          int height,
-                                                          int win_size)
-{
-    clSetKernelArg(preprocessing_kernel, 0, sizeof(cl_mem), &input_img);
-    clSetKernelArg(preprocessing_kernel, 1, sizeof(cl_mem), &output_img);
-    clSetKernelArg(preprocessing_kernel, 2, sizeof(cl_mem), &output_stdmean);
-    clSetKernelArg(preprocessing_kernel, 3, sizeof(cl_mem), &output_stddev);
-
-    clSetKernelArg(preprocessing_kernel, 4, sizeof(int), &width);
-    clSetKernelArg(preprocessing_kernel, 5, sizeof(int), &height);
-    clSetKernelArg(preprocessing_kernel, 6, sizeof(int), &win_size);
-}
-
-
-
-void OpenCLDisparityEstimator::setDisparityKernelArgs(cl_mem disp,
-                                                      cl_mem left_img,     cl_mem right_img,
-                                                      cl_mem left_stdmean, cl_mem right_stdmean,
-                                                      cl_mem left_stddev,  cl_mem right_stddev,
-                                                      int width, int height,
-                                                      int win_size,
-                                                      int min_disparity, int max_disparity)
-{
-    clSetKernelArg(disparity_kernel, 0, sizeof(cl_mem), &disp);
-
-    clSetKernelArg(disparity_kernel, 1, sizeof(cl_mem), &left_img);
-    clSetKernelArg(disparity_kernel, 2, sizeof(cl_mem), &right_img);
-    clSetKernelArg(disparity_kernel, 3, sizeof(cl_mem), &left_stdmean);
-    clSetKernelArg(disparity_kernel, 4, sizeof(cl_mem), &right_stdmean);
-    clSetKernelArg(disparity_kernel, 5, sizeof(cl_mem), &left_stddev);
-    clSetKernelArg(disparity_kernel, 6, sizeof(cl_mem), &right_stddev);
-
-    clSetKernelArg(disparity_kernel, 7,  sizeof(int), &width);
-    clSetKernelArg(disparity_kernel, 8,  sizeof(int), &height);
-    clSetKernelArg(disparity_kernel, 9,  sizeof(int), &win_size);
-    clSetKernelArg(disparity_kernel, 10, sizeof(int), &min_disparity);
-    clSetKernelArg(disparity_kernel, 11, sizeof(int), &max_disparity);
-}
-
-
-
-void OpenCLDisparityEstimator::setDisparityKernelArgs2(cl_mem disp,
-                                                        cl_mem left_img,     cl_mem right_img,
-                                                        cl_mem left_stdmean, cl_mem right_stdmean,
-                                                        cl_mem left_stddev,  cl_mem right_stddev,
-                                                        int width, int height,
-                                                        int win_size,
-                                                        int min_disp, int max_disp, cl_mem best_zncc)
-{
-    int halo_size = TILE_SIZE + (win_size >> 1)*2;
-    int right_halo_width = TILE_SIZE + BATCH_SIZE + (win_size >> 1)*2;
-
-    clSetKernelArg(disparity_kernel2, 0, sizeof(cl_mem), &disp);
-
-    clSetKernelArg(disparity_kernel2, 1, sizeof(cl_mem), &left_img);
-    clSetKernelArg(disparity_kernel2, 2, sizeof(cl_mem), &right_img);
-    clSetKernelArg(disparity_kernel2, 3, sizeof(cl_mem), &left_stdmean);
-    clSetKernelArg(disparity_kernel2, 4, sizeof(cl_mem), &right_stdmean);
-    clSetKernelArg(disparity_kernel2, 5, sizeof(cl_mem), &left_stddev);
-    clSetKernelArg(disparity_kernel2, 6, sizeof(cl_mem), &right_stddev);
-
-    clSetKernelArg(disparity_kernel2, 7,  sizeof(int), &width);
-    clSetKernelArg(disparity_kernel2, 8,  sizeof(int), &height);
-    clSetKernelArg(disparity_kernel2, 9,  sizeof(int), &win_size);
-    clSetKernelArg(disparity_kernel2, 10, halo_size*halo_size       *sizeof(float), NULL);
-    clSetKernelArg(disparity_kernel2, 11, halo_size*right_halo_width*sizeof(float), NULL);
-
-    clSetKernelArg(disparity_kernel2, 12, sizeof(int), &min_disp);
-    clSetKernelArg(disparity_kernel2, 13, sizeof(int), &max_disp);
-    clSetKernelArg(disparity_kernel2, 14, sizeof(cl_mem), &best_zncc);
-}
-
-
 
 
 void OpenCLDisparityEstimator::deallocateBuffers()
 {
-    clReleaseMemObject(left_output_buffer);
-    clReleaseMemObject(right_output_buffer);
-
     for (int i = 0; i < 7; i++) {
         clReleaseMemObject(tmp_buffers[i]);
     }
@@ -297,9 +207,6 @@ void OpenCLDisparityEstimator::checkBufferSize(int w, int h) {
 
     //Allocate buffers
     cl_int err;
-
-    left_output_buffer  = clCreateBuffer(ctx.context, CL_MEM_WRITE_ONLY, w*h*sizeof(uint8_t), NULL, &err);
-    right_output_buffer = clCreateBuffer(ctx.context, CL_MEM_WRITE_ONLY, w*h*sizeof(uint8_t), NULL, &err);
 
     for (int i = 0; i < 7; i++) {
         tmp_buffers[i] = clCreateBuffer(ctx.context, CL_MEM_READ_WRITE, w*h*sizeof(float), NULL, &err);

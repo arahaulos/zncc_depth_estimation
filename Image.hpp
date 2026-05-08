@@ -30,6 +30,7 @@ struct Image
     virtual void resize(int new_width, int new_height);
     virtual void convertToGrayscale(const std::array<float, 3> &coeff);
 
+    virtual void copyDeviceToHost() {};
 
     int width;
     int height;
