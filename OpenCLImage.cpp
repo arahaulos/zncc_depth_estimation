@@ -131,7 +131,8 @@ void OpenCLImage::allocate(int w, int h, int bpp)
 
 void OpenCLImage::filter2d(const uint8_t *kernel, int kernel_size)
 {
-    //__kernel void image_filtering(__global const uchar *input_img, __global uchar *output_img, const int width, const int height, const int bytes_per_pixel, __global const uchar *filter, int filter_size)
+    //Applies 2d kernel to image
+    //copyDeviceToHost is needed if pixel data is needed on host memory
 
     auto &ctx = OpenCLContext::getInstance();
     size_t global_work_size[2] = {(size_t)width, (size_t)height};
@@ -176,7 +177,9 @@ void OpenCLImage::downsample(int times)
 
 void OpenCLImage::resize(int new_width, int new_height)
 {
-    //__kernel void image_resize(__global const uchar *input_img, __global uchar *output_img, const int width, const int height, const int out_width, const int out_height, const int bytes_per_pixel)
+    //Resizes image to new_width x new_height
+    //Uses resize_kernel uses bilinear interpolation
+    //copyDeviceToHost is needed if pixel data is needed on host memory
 
     auto &ctx = OpenCLContext::getInstance();
     size_t global_work_size[2] = {(size_t)new_width, (size_t)new_height};
@@ -187,6 +190,7 @@ void OpenCLImage::resize(int new_width, int new_height)
     setKernelArgs(resize_kernel, 0, buffer, new_buffer, width, height, new_width, new_height, bytes_per_pixel);
     clEnqueueNDRangeKernel(ctx.queue, resize_kernel, 2, NULL, global_work_size, NULL, 0, NULL, NULL);
 
+    //Release previous buffer
     clReleaseMemObject(buffer);
 
     width = new_width;
@@ -199,6 +203,9 @@ void OpenCLImage::resize(int new_width, int new_height)
 
 void OpenCLImage::convertToGrayscale(const std::array<float, 3> &coeff)
 {
+    //Converts image to grayscale using RGB coefficients
+    //copyDeviceToHost is needed if pixel data is needed on host memory
+
     if (bytes_per_pixel == 1) {
         return;
     }
@@ -214,6 +221,7 @@ void OpenCLImage::convertToGrayscale(const std::array<float, 3> &coeff)
 
     clReleaseMemObject(buffer);
 
+    //Update image state
     bytes_per_pixel = 1;
     pixels.resize(width*height);
 
@@ -223,6 +231,8 @@ void OpenCLImage::convertToGrayscale(const std::array<float, 3> &coeff)
 
 void OpenCLImage::copyDeviceToHost()
 {
+    //Copies image data from device memory to host memory
+
     if (allocated_buffer_size < 0) {
         return;
     }
@@ -236,6 +246,8 @@ void OpenCLImage::copyDeviceToHost()
 
 void OpenCLImage::copyHostToDevice()
 {
+    //Copies image data from host memory to device memory
+
     auto &ctx = OpenCLContext::getInstance();
 
     cl_int err;

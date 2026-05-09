@@ -11,6 +11,9 @@ namespace Disparity
 
 class OpenCLPostProcessor: public PostProcessor
 {
+    //Inherits interface from CPU postprocessing implementation
+    //Implements same functionality using opencl
+
 public:
     OpenCLPostProcessor();
     ~OpenCLPostProcessor();

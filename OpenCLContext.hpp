@@ -4,12 +4,15 @@
 #include <vector>
 #include <CL/cl.h>
 
+
+//This is used on setKernelArgs to define localbuffer
 struct LocalBuffer {
     size_t size;
 };
 
-inline void setKernelArgs(cl_kernel kernel, int index) {};
+//Uses C++ template unfolding to set kernel args without manually calling million time clSetKernelArgs
 
+inline void setKernelArgs(cl_kernel kernel, int index) {};
 template<typename... Rest>
 void setKernelArgs(cl_kernel kernel, int index, LocalBuffer local, Rest... rest) {
     clSetKernelArg(kernel, index, local.size, NULL);
@@ -21,16 +24,18 @@ void setKernelArgs(cl_kernel kernel, int index, T first, Rest... rest) {
     setKernelArgs(kernel, index + 1, rest...);
 }
 
-
+//This singleton holds opencl context and command queue
+//It also compiles program
 struct OpenCLContext
 {
     OpenCLContext();
 
+    //Since this is singleton, copy constructor and copy assignment should be removed
     OpenCLContext(const OpenCLContext&) = delete;
     OpenCLContext& operator=(const OpenCLContext&) = delete;
 
     static OpenCLContext& getInstance() {
-        static OpenCLContext instance;
+        static OpenCLContext instance; //One static instance
         return instance;
     }
     ~OpenCLContext();

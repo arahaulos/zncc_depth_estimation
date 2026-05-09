@@ -49,10 +49,11 @@ std::unique_ptr<Image> OpenCLPostProcessor::crossCheck(DisparityResult disparity
     cl_mem right_to_left;
 
     try {
-        //Try to upcast Images to OpenCLImages to get buffers
+        //Try to downcast Images to OpenCLImages to get opencl buffers
         left_to_right = dynamic_cast<OpenCLImage&>(*disparity.leftToRight).getOpenCLBuffer();
         right_to_left = dynamic_cast<OpenCLImage&>(*disparity.rightToLeft).getOpenCLBuffer();
     } catch (...) {
+        //Input images are regular images, lets create temporary buffers and upload pixel data from host memory
         temp_input_buffers = true;
 
         left_to_right  = clCreateBuffer(ctx.context, CL_MEM_READ_ONLY, width*height*sizeof(uint8_t), NULL, NULL);
@@ -118,6 +119,9 @@ std::unique_ptr<Image> OpenCLPostProcessor::erosion(Image &in)
 
 std::unique_ptr<Image> OpenCLPostProcessor::fill(Image &in)
 {
+    //Uses OpenCL to fill zero pixels
+    //Uses algorithm where closest non zero point from same scanline is used
+
     auto &prof = Utils::Profiler::getInstance();
     auto &ctx = OpenCLContext::getInstance();
 

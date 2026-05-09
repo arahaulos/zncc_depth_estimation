@@ -16,15 +16,17 @@ std::unique_ptr<Image> estimateDepthMap(std::shared_ptr<Disparity::DisparityEsti
                                         Image &left, Image &right,
                                         int win_size, int min_disparity, int max_disparity)
 {
+    //This function implements full depth map estimation for all implementations
+
     auto &prof = Utils::Profiler::getInstance();
 
     auto frame_pg = prof.section("frame"); //End time is recorded when frame_pg goes outside of scope (destructor called)
 
-    Disparity::DisparityResult disparity = disp_estimator->estimate(left, right, win_size, min_disparity, max_disparity);
-    std::unique_ptr<Image> cc_result = post_processor->crossCheck(disparity, min_disparity, max_disparity, 5);
-    std::unique_ptr<Image> eroded = post_processor->erosion(*cc_result);
+    Disparity::DisparityResult disparity = disp_estimator->estimate(left, right, win_size, min_disparity, max_disparity); //Estimate disparity
+    std::unique_ptr<Image> cc_result = post_processor->crossCheck(disparity, min_disparity, max_disparity, 5); //Do crosschecking
+    std::unique_ptr<Image> eroded = post_processor->erosion(*cc_result); //Use erosion operation to remove oddities at occluded area edges
 
-    return post_processor->fill(*eroded);
+    return post_processor->fill(*eroded); //Fill and return
 }
 
 
@@ -45,9 +47,11 @@ std::pair<std::unique_ptr<Image>, std::unique_ptr<Image>> loadTestImages(std::st
         right = std::make_unique<OpenCLImage>(right_filepath);
     }
 
+    //Scale down
     left->downsample(2);
     right->downsample(2);
 
+    //Convert to grayscale
     left->convertToGrayscale(graycoeff);
     right->convertToGrayscale(graycoeff);
 
@@ -65,6 +69,7 @@ void benchSerialImplementation(int window_size = 9)
     std::cout << "Test image size: " << left->width << "x" << right->height << std::endl;
     std::cout << "Window size: " << window_size << "x" << window_size << std::endl;
 
+    //Create serial disparity implementation and CPU postprocessing implementation
     auto disp_estimator = std::make_shared<Disparity::SerialDisparityEstimator>();
     auto post_processor = std::make_shared<Disparity::PostProcessor>();
 
@@ -93,6 +98,7 @@ void benchMultiThreadedImpelementation(std::vector<int> cnts, int window_size = 
     std::cout << "Test image size: " << left->width << "x" << right->height << std::endl;
     std::cout << "Window size: " << window_size << "x" << window_size << std::endl;
 
+    //Create multithreaded disparity implementation and CPU postprocessing implementation
     auto disp_estimator = std::make_shared<Disparity::MultiThreadedDisparityEstimator>();
     auto post_processor = std::make_shared<Disparity::PostProcessor>();
 
@@ -117,17 +123,19 @@ void benchMultiThreadedImpelementation(std::vector<int> cnts, int window_size = 
 void benchOpenCLImplementation(int window_size = 9) {
     auto &prof = Utils::Profiler::getInstance();
 
+    //Load test images
     auto [left, right] = loadTestImages("images/im0.png", "images/im1.png", IMAGE_OPENCL);
 
     std::cout << "Test image size: " << left->width << "x" << right->height << std::endl;
     std::cout << "Window size: " << window_size << "x" << window_size << std::endl;
 
+    //Create opencl disparity implementation and opencl postprocessing implementation
     auto disp_estimator = std::make_shared<Disparity::OpenCLDisparityEstimator>();
     auto post_processor = std::make_shared<Disparity::OpenCLPostProcessor>();
 
     std::shared_ptr<Image> depth_map;
 
-    //First test using non tiled implementation
+    //First test using non tiled (unoptimized) implementation
     disp_estimator->enableTiling(false);
 
     for (int i = 0; i < 1000; i++) {
@@ -142,7 +150,7 @@ void benchOpenCLImplementation(int window_size = 9) {
     prof.clear();
 
 
-    //Test tiled implementation
+    //Test tiled (optimized) implementation
     disp_estimator->enableTiling(true);
     for (int i = 0; i < 1000; i++) {
         depth_map = estimateDepthMap(disp_estimator, post_processor, *left, *right, 9, 0, 65);

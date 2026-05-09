@@ -17,6 +17,7 @@ public:
 
     DisparityResult estimate(Image &left, Image &right, int win_size, int min_disparity, int max_disparity);
 
+    //This is used to select what ever tiled (optimized) or non-tiled (unoptimized) kernel is used
     void enableTiling(bool e) {
         use_tiling = e;
     }

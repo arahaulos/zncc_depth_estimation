@@ -57,6 +57,10 @@ inline float ZNCC(const float *left_img, const float *right_img,
                   int width, int height,
                   int x, int y, int x_offset, int win_size)
 {
+    //Calculates window ZNCC value for given (x,y) pixel and x_offset
+    //Uses precomputed mean and deviation values
+    //Relies that calling function takes care of bound checking
+
     int ws = win_size >> 1;
 
     float lmean = left_stdmean[y * width + x];

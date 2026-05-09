@@ -41,7 +41,6 @@ OpenCLDisparityEstimator::~OpenCLDisparityEstimator() {
 
 
 DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, int win_size, int min_disparity, int max_disparity) {
-
     auto &ctx = OpenCLContext::getInstance();
     auto &prof = Utils::Profiler::getInstance();
 
@@ -206,6 +205,10 @@ void OpenCLDisparityEstimator::deallocateBuffers()
 }
 
 void OpenCLDisparityEstimator::checkBufferSize(int w, int h) {
+    //Purpose of this function is check if input image dimensions are same as
+    //already allocated GPU buffers. If not, it releases old buffers and allocates
+    //new correct size buffers
+
     if (w == image_w && h == image_h) {
         return;
     }

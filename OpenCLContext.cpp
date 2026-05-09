@@ -19,11 +19,9 @@ OpenCLContext::OpenCLContext() {
     platforms.resize(num_platforms);
 
     err = clGetPlatformIDs(num_platforms, platforms.data(), NULL);
-
     err = clGetDeviceIDs(platforms[0], CL_DEVICE_TYPE_ALL, 1, &device, NULL);
 
     context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
-
     queue = clCreateCommandQueue(context, device, CL_QUEUE_PROFILING_ENABLE, &err);
 
 
@@ -48,6 +46,7 @@ OpenCLContext::OpenCLContext() {
 
         delete [] log;
 
+        //Better just crash hard...
         std::exit(1);
 
         return;
@@ -84,6 +83,8 @@ cl_kernel OpenCLContext::createKernel(const std::string &name)
 
 void OpenCLContext::printDeviceInfo()
 {
+    //This function prints info about GPU
+
     cl_device_local_mem_type mem_type;
     cl_ulong mem_size;
     cl_uint compute_units;
@@ -118,6 +119,10 @@ void OpenCLContext::printDeviceInfo()
 
 std::pair<uint64_t, uint64_t> OpenCLContext::getProfilingResults(cl_event event)
 {
+    //Takes event, and queries opencl profiling info to get its execution time
+    //Converts nanoseconds to microseconds
+    //Returns pair {start_timestamp, end_timestamp}
+
     cl_ulong start, end;
     clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &start, NULL);
     clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &end,   NULL);
@@ -129,6 +134,11 @@ std::pair<uint64_t, uint64_t> OpenCLContext::getProfilingResults(cl_event event)
 
 std::pair<uint64_t, uint64_t> OpenCLContext::getProfilingResults(cl_event first_event, cl_event last_event)
 {
+    //Some kernels are executed multiple times. Better to profile how much all runs took execution time
+    //Gets start timestamp from first event and last timestamp from last event
+    //Converts nanoseconds to microseconds
+    //Returns pair {start_timestamp, end_timestamp}
+
     cl_ulong start, end;
     clGetEventProfilingInfo(first_event, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &start, NULL);
     clGetEventProfilingInfo(last_event, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &end,   NULL);

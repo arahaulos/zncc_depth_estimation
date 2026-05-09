@@ -12,6 +12,8 @@ namespace Disparity
 
 uint8_t findClosestNonZeroScanline(Image &img, int x, int y)
 {
+    //Finds closest non zero point from same scanline
+
     uint8_t *scanline = &img.pixels[y * img.width];
 
     int rx = x;
@@ -46,6 +48,8 @@ uint8_t findClosestNonZeroScanline(Image &img, int x, int y)
 
 uint8_t findClosestNonZero(Image &img, int x, int y)
 {
+    //Uses simple breadth first search to find closest on zero point
+
     std::vector<bool> searched(img.width*img.height);
     std::fill(searched.begin(), searched.end(), false);
     searched[y * img.width + x] = true;
@@ -104,7 +108,7 @@ std::unique_ptr<Image> PostProcessor::crossCheck(DisparityResult disparity, int 
 {
     auto pg = Utils::Profiler::getInstance().section("postprocessing_crosscheck");
 
-    disparity.leftToRight->copyDeviceToHost();
+    disparity.leftToRight->copyDeviceToHost(); //Make sure that pixel data is at host memory (if normal Image is used, doesn't do anything)
     disparity.rightToLeft->copyDeviceToHost();
 
     int width = disparity.leftToRight->width;
@@ -112,16 +116,20 @@ std::unique_ptr<Image> PostProcessor::crossCheck(DisparityResult disparity, int 
 
     auto result = std::make_unique<Image>();
 
-    result->allocate(width, height);
+    result->allocate(width, height); //Allocate result
 
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
+            //Read disparity value from leftToRight image
+            //And find corresponding value from rightToLeft image
             int leftdp = disparity.leftToRight->pixels[y*width + x];
             int rightdp = disparity.rightToLeft->pixels[y*width + std::clamp(x - leftdp, 0, width-1)];
 
             if (std::abs(leftdp - rightdp) > max_disp_diff || leftdp == 0 || rightdp == 0) {
-                result->pixels[y*width + x] = 0;
+                result->pixels[y*width + x] = 0; //There is too big difference
             } else {
+                //Difference is ok.
+                //Disparity value gets remapped from absolute disparity values to 0-255
                 result->pixels[y*width + x] = (leftdp - min_disparity) * 255 / (max_disparity - min_disparity);
             }
         }
@@ -134,11 +142,14 @@ std::unique_ptr<Image> PostProcessor::erosion(Image &in)
 {
     auto pg = Utils::Profiler::getInstance().section("postprocessing_erosion");
 
-    in.copyDeviceToHost();
+    in.copyDeviceToHost(); //Make sure that pixel data is at host memory (if normal Image is used, doesn't do anything)
 
-    auto out = std::make_unique<Image>(in.width, in.height);
+    auto out = std::make_unique<Image>(in.width, in.height); //Create resulting image
+
 
     auto has_zero_neighbors = [&] (int x, int y) -> bool {
+        //returns true when window has zero pixels
+        //return false when window doesn't have zero pixels'
         static const int neightbor_coords[] =
         {
             -1, 0,
@@ -166,7 +177,7 @@ std::unique_ptr<Image> PostProcessor::erosion(Image &in)
         return false;
     };
 
-
+    //Iterates all pixels and if they have zero neighbors, set them 0
     for (int y = 0; y < in.height; y++) {
         for (int x = 0; x < in.width; x++) {
             if (has_zero_neighbors(x, y)) {
@@ -184,10 +195,14 @@ std::unique_ptr<Image> PostProcessor::fill(Image &in)
 {
     auto pg = Utils::Profiler::getInstance().section("postprocessing_fill");
 
-    in.copyDeviceToHost();
+    in.copyDeviceToHost(); //Make sure that pixel data is at host memory (if normal Image is used, doesn't do anything)
 
-    auto result = std::make_unique<Image>(in);
+    auto result = std::make_unique<Image>(in); //Makes copy from input
 
+
+    //This algorithms is more optimized version findClosestNonZeroScanline
+    //It walks each scanlines, and when zero region is found,
+    //it splits line half and fills first half with last non-zero value and last half with next non-zero color
     for (int y = 0; y < in.height; y++) {
         auto output_row = result->pixels.begin() + (y*result->width);
 

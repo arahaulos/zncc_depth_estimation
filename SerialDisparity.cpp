@@ -28,7 +28,7 @@ void disparity(Image &disp,
             int max_disp = std::min(max_disparity, x         - ws);
 
             //Check if disparity range is valid
-            //And that window is inside image
+            //And that window is fully inside image
             if (min_disp > max_disp ||
                 x+ws >= width ||
                 x-ws < 0) {

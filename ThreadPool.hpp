@@ -10,6 +10,10 @@
 
 struct ThreadPool
 {
+    //ThreadPool has queue of works
+    //Works are lambdas wrapped in std::function
+    //ThreadPool has N threads, which will fetch works from queue
+
     ThreadPool();
     ~ThreadPool();
 
@@ -17,7 +21,7 @@ struct ThreadPool
 
     void thread_entry();
 
-    void wait();
+    void wait(); //Blocks until all queued works are executed
     void addWork(const std::function<void()>& job);
 private:
     void createThreads(int num_of_threads);

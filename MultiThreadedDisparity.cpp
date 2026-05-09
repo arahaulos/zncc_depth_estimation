@@ -36,7 +36,7 @@ void disparityScanlines(Image &disp, int sy,
             int max_disp = std::min(max_disparity, x         - ws);
 
             //Check if disparity range is valid
-            //And that window is inside image
+            //And that window is fully inside image
             if (min_disp > max_disp ||
                 x+ws >= width ||
                 x-ws < 0) {
@@ -148,6 +148,8 @@ DisparityResult MultiThreadedDisparityEstimator::estimate(Image &left, Image &ri
     int width = left.width;
     int height = left.height;
 
+
+    //Allocate temporary buffers
     std::vector<float> left_img(width*height + 8); //Add small padding to prevent AVX2 kernel reading out of the bounds
     std::vector<float> right_img(width*height + 8);
 
@@ -158,6 +160,8 @@ DisparityResult MultiThreadedDisparityEstimator::estimate(Image &left, Image &ri
     std::vector<float> right_stddev(width*height + 8);
 
     {
+        //Calculate window means and devs
+
         auto pg = prof.section("disparity_precompute");
         for (int y = 0; y < height; y += lines_per_task) {
             //Job is lambda wrapped with std::function
@@ -177,16 +181,16 @@ DisparityResult MultiThreadedDisparityEstimator::estimate(Image &left, Image &ri
     {
         auto pg = prof.section("disparity_processing");
         disparity(pool, *result.leftToRight,
-                left_img.data(), right_img.data(),
-                left_stdmean.data(), right_stdmean.data(),
-                left_stddev.data(), right_stddev.data(),
-                win_size, min_disparity, max_disparity);
+                  left_img.data(), right_img.data(),
+                  left_stdmean.data(), right_stdmean.data(),
+                  left_stddev.data(), right_stddev.data(),
+                  win_size, min_disparity, max_disparity);
 
         disparity(pool, *result.rightToLeft,
-                right_img.data(), left_img.data(),
-                right_stdmean.data(), left_stdmean.data(),
-                right_stddev.data(), left_stddev.data(),
-                win_size, -max_disparity, -min_disparity);
+                  right_img.data(), left_img.data(),
+                  right_stdmean.data(), left_stdmean.data(),
+                  right_stddev.data(), left_stddev.data(),
+                  win_size, -max_disparity, -min_disparity);
 
         //Wait that disparity jobs have been finished
         pool.wait();
