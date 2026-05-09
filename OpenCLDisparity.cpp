@@ -20,6 +20,7 @@ OpenCLDisparityEstimator::OpenCLDisparityEstimator() {
     image_h = -1;
 
     preprocessing_kernel = ctx.createKernel("preprocess");
+    preprocessing_kernel2 = ctx.createKernel("preprocess2");
     disparity_kernel = ctx.createKernel("disparity");
     disparity_kernel2 = ctx.createKernel("disparity2");
 
@@ -44,6 +45,8 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
     auto &ctx = OpenCLContext::getInstance();
     auto &prof = Utils::Profiler::getInstance();
 
+    auto disp_pg = prof.section("disparity");
+
     cl_event precompute_start;
     cl_event precompute_end;
 
@@ -61,8 +64,6 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
 
     leftToRight->allocate(width, height, 1);
     rightToLeft->allocate(width, height, 1);
-
-    size_t global_work_size[2] = {(size_t)width, (size_t)height};
 
     //Check that buffer are allocated and right size
     checkBufferSize(width, height);
@@ -88,21 +89,14 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
         clEnqueueWriteBuffer(ctx.queue, right_input_buffer, CL_FALSE, 0, width*height*sizeof(uint8_t), right.pixels.data(), 0, NULL, NULL);
     }
 
-    //Run preprocessing for left image
-    setKernelArgs(preprocessing_kernel, 0, left_input_buffer, tmp_buffers[0], tmp_buffers[1], tmp_buffers[2], width, height, win_size);
-    clEnqueueNDRangeKernel(ctx.queue, preprocessing_kernel, 2, NULL, global_work_size, NULL, 0, NULL, &precompute_start);
-
-    //Run preprocessing for right image
-    setKernelArgs(preprocessing_kernel, 0, right_input_buffer, tmp_buffers[3], tmp_buffers[4], tmp_buffers[5], width, height, win_size);
-    clEnqueueNDRangeKernel(ctx.queue, preprocessing_kernel, 2, NULL, global_work_size, NULL, 0, NULL, &precompute_end);
-
     if (use_tiling) {
+
         //Round up image size for global work dimensions
-        size_t global_work_size2[2] = {(size_t)((width  + TILE_SIZE - 1)/TILE_SIZE)*TILE_SIZE,
+        size_t global_work_size[2] = {(size_t)((width  + TILE_SIZE - 1)/TILE_SIZE)*TILE_SIZE,
                                        (size_t)((height + TILE_SIZE - 1)/TILE_SIZE)*TILE_SIZE};
 
         //Tile is work group
-        size_t local_work_size2[2] = {(size_t)TILE_SIZE, (size_t)TILE_SIZE};
+        size_t local_work_size[2] = {(size_t)TILE_SIZE, (size_t)TILE_SIZE};
 
 
         //Calculate width of local buffers needed
@@ -112,6 +106,15 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
         //Calculate sizes of local buffers
         size_t left_halo_size = left_halo_width*left_halo_width*sizeof(float);
         size_t right_halo_size = left_halo_width*right_halo_width*sizeof(float);
+
+        //Run preprocessing for left image
+        setKernelArgs(preprocessing_kernel2, 0, left_input_buffer, tmp_buffers[0], tmp_buffers[1], tmp_buffers[2], width, height, win_size, LocalBuffer{left_halo_size});
+        clEnqueueNDRangeKernel(ctx.queue, preprocessing_kernel2, 2, NULL, global_work_size, local_work_size, 0, NULL, &precompute_start);
+
+        //Run preprocessing for right image
+        setKernelArgs(preprocessing_kernel2, 0, right_input_buffer, tmp_buffers[3], tmp_buffers[4], tmp_buffers[5], width, height, win_size, LocalBuffer{left_halo_size});
+        clEnqueueNDRangeKernel(ctx.queue, preprocessing_kernel2, 2, NULL, global_work_size, local_work_size, 0, NULL, &precompute_end);
+
 
         float min_zncc = -100000.0f;
 
@@ -129,7 +132,7 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
                           LocalBuffer{left_halo_size}, LocalBuffer{right_halo_size},
                           d, std::min(d + BATCH_SIZE, max_disparity + 1), tmp_buffers[6]);
 
-            clEnqueueNDRangeKernel(ctx.queue, disparity_kernel2, 2, NULL, global_work_size2, local_work_size2, 0, NULL, (d == min_disparity ? &disparity_start : NULL));
+            clEnqueueNDRangeKernel(ctx.queue, disparity_kernel2, 2, NULL, global_work_size, local_work_size, 0, NULL, (d == min_disparity ? &disparity_start : NULL));
         }
 
         //Same for right to left
@@ -145,9 +148,19 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
                           LocalBuffer{left_halo_size}, LocalBuffer{right_halo_size},
                           d, std::min(d + BATCH_SIZE, -min_disparity + 1), tmp_buffers[6]);
 
-            clEnqueueNDRangeKernel(ctx.queue, disparity_kernel2, 2, NULL, global_work_size2, local_work_size2, 0, NULL, (d + BATCH_SIZE >= -min_disparity ? &disparity_end : NULL));
+            clEnqueueNDRangeKernel(ctx.queue, disparity_kernel2, 2, NULL, global_work_size, local_work_size, 0, NULL, (d + BATCH_SIZE >= -min_disparity ? &disparity_end : NULL));
         }
     } else {
+
+        size_t global_work_size[2] = {(size_t)width, (size_t)height};
+
+        //Run preprocessing for left image
+        setKernelArgs(preprocessing_kernel, 0, left_input_buffer, tmp_buffers[0], tmp_buffers[1], tmp_buffers[2], width, height, win_size);
+        clEnqueueNDRangeKernel(ctx.queue, preprocessing_kernel, 2, NULL, global_work_size, NULL, 0, NULL, &precompute_start);
+
+        //Run preprocessing for right image
+        setKernelArgs(preprocessing_kernel, 0, right_input_buffer, tmp_buffers[3], tmp_buffers[4], tmp_buffers[5], width, height, win_size);
+        clEnqueueNDRangeKernel(ctx.queue, preprocessing_kernel, 2, NULL, global_work_size, NULL, 0, NULL, &precompute_end);
 
         //Run disparity algorithm for left to right image
         setKernelArgs(disparity_kernel, 0,

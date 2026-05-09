@@ -50,8 +50,8 @@ Profiler::Profiler() {
 
 uint64_t Profiler::getSectionAverageTime(const std::string &section_name)
 {
-    std::vector<uint64_t> start_times = start_time_points[section_name];
-    std::vector<uint64_t> end_times = end_time_points[section_name];
+    std::vector<uint64_t> &start_times = start_time_points[section_name];
+    std::vector<uint64_t> &end_times = end_time_points[section_name];
 
     uint64_t total_execution_time = 0;
     for (size_t i = 0; i < end_times.size(); i++) {
@@ -64,8 +64,8 @@ uint64_t Profiler::getSectionAverageTime(const std::string &section_name)
 std::vector<std::string> Profiler::getSectionNames()
 {
     std::vector<std::string> names;
-    for (auto it = end_time_points.begin(); it != end_time_points.end(); ++it) {
-        names.push_back(it->first);
+    for (auto &[key, value] : end_time_points) {
+        names.push_back(key);
     }
     return names;
 }

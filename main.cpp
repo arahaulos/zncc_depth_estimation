@@ -11,7 +11,7 @@
 #include "PostProcessing.hpp"
 
 
-std::shared_ptr<Image> estimateDepthMap(std::shared_ptr<Disparity::DisparityEstimator> disp_estimator,
+std::unique_ptr<Image> estimateDepthMap(std::shared_ptr<Disparity::DisparityEstimator> disp_estimator,
                                         std::shared_ptr<Disparity::PostProcessor> post_processor,
                                         Image &left, Image &right,
                                         int win_size, int min_disparity, int max_disparity)
@@ -20,27 +20,11 @@ std::shared_ptr<Image> estimateDepthMap(std::shared_ptr<Disparity::DisparityEsti
 
     auto frame_pg = prof.section("frame"); //End time is recorded when frame_pg goes outside of scope (destructor called)
 
-    Disparity::DisparityResult disparity;
-    {
-        auto pg = prof.section("disparity");
-        disparity = disp_estimator->estimate(left, right, win_size, min_disparity, max_disparity);
-    }
+    Disparity::DisparityResult disparity = disp_estimator->estimate(left, right, win_size, min_disparity, max_disparity);
+    std::unique_ptr<Image> cc_result = post_processor->crossCheck(disparity, min_disparity, max_disparity, 5);
+    std::unique_ptr<Image> eroded = post_processor->erosion(*cc_result);
 
-    std::shared_ptr<Image> cc_result;
-    {
-        auto pg = prof.section("crosscheck");
-        cc_result = post_processor->crossCheck(disparity, min_disparity, max_disparity, 5);
-    }
-
-    std::shared_ptr<Image> result;
-    {
-        auto pg = prof.section("fill");
-
-        cc_result = post_processor->erosion(*cc_result);
-        result = post_processor->fill(*cc_result);
-    }
-
-    return result;
+    return post_processor->fill(*eroded);
 }
 
 
@@ -71,6 +55,34 @@ std::pair<std::unique_ptr<Image>, std::unique_ptr<Image>> loadTestImages(std::st
 }
 
 
+void benchSerialImplementation(int window_size = 9)
+{
+    auto &prof = Utils::Profiler::getInstance();
+
+    //Load test images
+    auto [left, right] = loadTestImages("images/im0.png", "images/im1.png", IMAGE_NORMAL);
+
+    std::cout << "Test image size: " << left->width << "x" << right->height << std::endl;
+    std::cout << "Window size: " << window_size << "x" << window_size << std::endl;
+
+    auto disp_estimator = std::make_shared<Disparity::SerialDisparityEstimator>();
+    auto post_processor = std::make_shared<Disparity::PostProcessor>();
+
+    std::shared_ptr<Image> depth_map;
+
+    for (int i = 0; i < 10; i++) {
+        depth_map = estimateDepthMap(disp_estimator, post_processor, *left, *right, 9, 0, 65);
+    }
+
+    std::cout << "Avg frametime: " << prof.getSectionAverageTime("frame") << " ms" << std::endl;
+    prof.printAllAverageTimes();
+    prof.clear();
+
+    depth_map->save("images/disp.png");
+}
+
+
+
 void benchMultiThreadedImpelementation(std::vector<int> cnts, int window_size = 9)
 {
     auto &prof = Utils::Profiler::getInstance();
@@ -89,7 +101,7 @@ void benchMultiThreadedImpelementation(std::vector<int> cnts, int window_size = 
 
         disp_estimator->getThreadPool().setThreads(threads);
 
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 100; i++) {
             depth_map = estimateDepthMap(disp_estimator, post_processor, *left, *right, 9, 0, 65);
         }
 
@@ -118,7 +130,7 @@ void benchOpenCLImplementation(int window_size = 9) {
     //First test using non tiled implementation
     disp_estimator->enableTiling(false);
 
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 1000; i++) {
         depth_map = estimateDepthMap(disp_estimator, post_processor, *left, *right, 9, 0, 65);
     }
 
@@ -132,7 +144,7 @@ void benchOpenCLImplementation(int window_size = 9) {
 
     //Test tiled implementation
     disp_estimator->enableTiling(true);
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 1000; i++) {
         depth_map = estimateDepthMap(disp_estimator, post_processor, *left, *right, 9, 0, 65);
     }
 
@@ -146,7 +158,11 @@ void benchOpenCLImplementation(int window_size = 9) {
 
 int main()
 {
+    //benchSerialImplementation();
+    //benchMultiThreadedImpelementation({32});
     benchOpenCLImplementation();
-    //benchMultiThreadedImpelementation({1, 2, 4, 8, 16, 32, 64});
+
     return 0;
 }
+
+

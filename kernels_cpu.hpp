@@ -70,9 +70,6 @@ inline float ZNCC(const float *left_img, const float *right_img,
         int ny = std::clamp(y + ky, 0, height-1);
 
         for (int kx = -ws; kx <= ws; kx++) {
-            //int nx0 = std::clamp(x + kx,            0, width-1);
-            //int nx1 = std::clamp(x + kx - x_offset, 0, width-1);
-
             int nx0 = x + kx;
             int nx1 = x + kx - x_offset;
 

@@ -27,6 +27,7 @@ private:
     void checkBufferSize(int w, int h);
 
     cl_kernel  preprocessing_kernel;
+    cl_kernel  preprocessing_kernel2;
     cl_kernel  disparity_kernel;
     cl_kernel  disparity_kernel2;
 

@@ -126,10 +126,13 @@ void disparity(ThreadPool &pool, Image &disp,
 
 DisparityResult MultiThreadedDisparityEstimator::estimate(Image &left, Image &right, int win_size, int min_disparity, int max_disparity)
 {
+    auto &prof = Utils::Profiler::getInstance();
+
+    auto disp_pg = prof.section("disparity");
+
+
     left.copyDeviceToHost();
     right.copyDeviceToHost();
-
-    auto &prof = Utils::Profiler::getInstance();
 
     //Make sure that window size is odd
     win_size = win_size | 0x1;

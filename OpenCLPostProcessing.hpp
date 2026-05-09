@@ -15,12 +15,15 @@ public:
     OpenCLPostProcessor();
     ~OpenCLPostProcessor();
 
-    std::shared_ptr<Image> crossCheck(DisparityResult disparity, int min_disparity, int max_disparity, int max_disp_diff) override;
+    std::unique_ptr<Image> crossCheck(DisparityResult disparity, int min_disparity, int max_disparity, int max_disp_diff) override;
 
-    std::shared_ptr<Image> erosion(Image &in) override;
+    std::unique_ptr<Image> erosion(Image &in) override;
+
+    std::unique_ptr<Image> fill(Image &in) override;
 private:
     cl_kernel crosscheck_kernel;
     cl_kernel erosion_kernel;
+    cl_kernel fill_kernel;
 };
 
 }

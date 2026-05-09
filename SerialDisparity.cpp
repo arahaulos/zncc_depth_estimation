@@ -77,6 +77,10 @@ void disparity(Image &disp,
 
 DisparityResult SerialDisparityEstimator::estimate(Image &left, Image &right, int win_size, int min_disparity, int max_disparity)
 {
+    auto &prof = Utils::Profiler::getInstance();
+
+    auto disp_pg = prof.section("disparity_call");
+
     left.copyDeviceToHost();
     right.copyDeviceToHost();
 
@@ -95,16 +99,20 @@ DisparityResult SerialDisparityEstimator::estimate(Image &left, Image &right, in
     std::vector<float> left_stddev(width*height + 8);
     std::vector<float> right_stddev(width*height + 8);
 
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            left_img[y * width + x] = static_cast<float>(left.pixels[y * width + x]);
-            right_img[y * width + x] = static_cast<float>(right.pixels[y * width + x]);
 
-            left_stdmean[y * width + x] = stdmean_kernel(left, x, y, win_size);
-            right_stdmean[y * width + x] = stdmean_kernel(right, x, y, win_size);
+    {
+        auto pg = prof.section("disparity_precompute");
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                left_img[y * width + x] = static_cast<float>(left.pixels[y * width + x]);
+                right_img[y * width + x] = static_cast<float>(right.pixels[y * width + x]);
 
-            left_stddev[y * width + x] = stddev_kernel(left, left_stdmean[y * width + x], x, y, win_size);
-            right_stddev[y * width + x] = stddev_kernel(right, right_stdmean[y * width + x], x, y, win_size);
+                left_stdmean[y * width + x] = stdmean_kernel(left, x, y, win_size);
+                right_stdmean[y * width + x] = stdmean_kernel(right, x, y, win_size);
+
+                left_stddev[y * width + x] = stddev_kernel(left, left_stdmean[y * width + x], x, y, win_size);
+                right_stddev[y * width + x] = stddev_kernel(right, right_stdmean[y * width + x], x, y, win_size);
+            }
         }
     }
 
@@ -114,17 +122,20 @@ DisparityResult SerialDisparityEstimator::estimate(Image &left, Image &right, in
     result.leftToRight = std::make_shared<Image>();
     result.rightToLeft = std::make_shared<Image>();
 
-    disparity(*result.leftToRight,
-              left_img.data(), right_img.data(),
-              left_stdmean.data(), right_stdmean.data(),
-              left_stddev.data(), right_stddev.data(),
-              width, height, win_size, min_disparity, max_disparity);
+    {
+        auto pg = prof.section("disparity_processing");
+        disparity(*result.leftToRight,
+                left_img.data(), right_img.data(),
+                left_stdmean.data(), right_stdmean.data(),
+                left_stddev.data(), right_stddev.data(),
+                width, height, win_size, min_disparity, max_disparity);
 
-    disparity(*result.rightToLeft,
-              right_img.data(), left_img.data(),
-              right_stdmean.data(), left_stdmean.data(),
-              right_stddev.data(), left_stddev.data(),
-              width, height, win_size, -max_disparity, -min_disparity);
+        disparity(*result.rightToLeft,
+                right_img.data(), left_img.data(),
+                right_stdmean.data(), left_stdmean.data(),
+                right_stddev.data(), left_stddev.data(),
+                width, height, win_size, -max_disparity, -min_disparity);
+    }
 
     return result;
 }

@@ -100,15 +100,17 @@ uint8_t findClosestNonZero(Image &img, int x, int y)
 
 
 
-std::shared_ptr<Image> PostProcessor::crossCheck(DisparityResult disparity, int min_disparity, int max_disparity, int max_disp_diff)
+std::unique_ptr<Image> PostProcessor::crossCheck(DisparityResult disparity, int min_disparity, int max_disparity, int max_disp_diff)
 {
+    auto pg = Utils::Profiler::getInstance().section("postprocessing_crosscheck");
+
     disparity.leftToRight->copyDeviceToHost();
     disparity.rightToLeft->copyDeviceToHost();
 
     int width = disparity.leftToRight->width;
     int height = disparity.rightToLeft->height;
 
-    auto result = std::make_shared<Image>();
+    auto result = std::make_unique<Image>();
 
     result->allocate(width, height);
 
@@ -128,11 +130,13 @@ std::shared_ptr<Image> PostProcessor::crossCheck(DisparityResult disparity, int 
     return result;
 }
 
-std::shared_ptr<Image> PostProcessor::erosion(Image &in)
+std::unique_ptr<Image> PostProcessor::erosion(Image &in)
 {
+    auto pg = Utils::Profiler::getInstance().section("postprocessing_erosion");
+
     in.copyDeviceToHost();
 
-    auto out = std::make_shared<Image>(in.width, in.height);
+    auto out = std::make_unique<Image>(in.width, in.height);
 
     auto has_zero_neighbors = [&] (int x, int y) -> bool {
         static const int neightbor_coords[] =
@@ -176,11 +180,13 @@ std::shared_ptr<Image> PostProcessor::erosion(Image &in)
 }
 
 
-std::shared_ptr<Image> PostProcessor::fill(Image &in)
+std::unique_ptr<Image> PostProcessor::fill(Image &in)
 {
+    auto pg = Utils::Profiler::getInstance().section("postprocessing_fill");
+
     in.copyDeviceToHost();
 
-    auto result = std::make_shared<Image>(in);
+    auto result = std::make_unique<Image>(in);
 
     for (int y = 0; y < in.height; y++) {
         auto output_row = result->pixels.begin() + (y*result->width);

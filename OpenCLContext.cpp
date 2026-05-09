@@ -27,7 +27,7 @@ OpenCLContext::OpenCLContext() {
     queue = clCreateCommandQueue(context, device, CL_QUEUE_PROFILING_ENABLE, &err);
 
 
-    std::string kernels_text = Utils::readTextFile("kernels_opencl.hpp");
+    std::string kernels_text = Utils::readTextFile("kernels_opencl.cl");
 
     const char *kernels_text_c_str = kernels_text.c_str();
 
@@ -47,6 +47,8 @@ OpenCLContext::OpenCLContext() {
         printf("Build log:\n%s\n", log);
 
         delete [] log;
+
+        std::exit(1);
 
         return;
     }
