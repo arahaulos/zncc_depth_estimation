@@ -13,6 +13,8 @@ TARGET = bin/zncc
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
+	@mkdir -p $(dir $@)
+
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $(TARGET) $(OBJS) -l $(LIBS)
 
 

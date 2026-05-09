@@ -3,7 +3,6 @@
 #include <memory.h>
 #include "CL/cl.h"
 #include "Image.hpp"
-#include "OpenCLContext.hpp"
 
 
 struct OpenCLImage : public Image

@@ -9,7 +9,7 @@ __kernel void disparity2(__global uchar *best_disp,
                          const int width, const int height, const int win_size,
                          __local float *left_halo, __local float *right_halo,  const int disp_batch_start, const int disp_batch_end, __global float *best_zncc)
 {
-    //This is kernel for doing ZNCC disparity
+    //This is kernel for doing stereo disparity based on ZNCC
     //Uses tiling, local memory and disparity batching
 
     int global_x = get_group_id(0) * TILE_SIZE;
@@ -24,7 +24,6 @@ __kernel void disparity2(__global uchar *best_disp,
     int ws = win_size >> 1;
 
     //Halo is surrounding area of tile
-    //Calculate halo sizes
 
     //Left halo width is TILE_SIZE + 2*(window_size / 2)
     int halo_size = TILE_SIZE + 2*ws;
@@ -57,14 +56,15 @@ __kernel void disparity2(__global uchar *best_disp,
         right_halo[hy * right_halo_width + hx] = right_img[sy * width + sx];
     }
 
-    //Syncronize to make sure each worker/thread has finished loading
+    //Syncronize to make sure each worker item has finished loading. Not safe to continue until ready
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    //Because image size is not necessarily divisible by tile size, so some workers are outside of image boundaries
+    //Because image size is not necessarily divisible by tile size, some workers are outside of image boundaries
     if (x >= width || y >= height)
         return;
 
     //Load mean and deviations for left window
+    //This values are calculated in preprocess2 kernel
     float lmean = left_stdmean[y * width + x];
     float ldev  = left_stddev[y * width + x];
 
@@ -106,6 +106,7 @@ __kernel void disparity2(__global uchar *best_disp,
         if (denom > 0.0001f) {
             float zncc = cc / denom;
 
+            //Check if ZNCC is best in batch (so far)
             if (batch_best_zncc < zncc) {
                 batch_best_zncc = zncc;
                 batch_best_disp = d;
@@ -128,7 +129,7 @@ __kernel void preprocess2(__global const uchar *input_img,
                           __global float *output_stddev,
                           const int width, const int height, const int win_size, __local uchar *halo)
 {
-    //This kernel precalculates window means and deviations for ZNCC kernel
+    //This kernel precalculates window means and deviations for disparity kernel
     //Uses tiling and local memory
 
     int global_x = get_group_id(0) * TILE_SIZE;
@@ -164,6 +165,7 @@ __kernel void preprocess2(__global const uchar *input_img,
     float mean = 0.0f;
     float deviation = 0.0f;
 
+    //Calculate sum of pixels inside window
     int sum = 0;
     for (int ky = 0; ky <= ws*2; ky++) {
         int hy = local_y + ky;
@@ -174,6 +176,7 @@ __kernel void preprocess2(__global const uchar *input_img,
         }
     }
 
+    //Calculate mean
     mean = (float)sum / (win_size*win_size);
 
     for (int ky = 0; ky <= ws*2; ky++) {
@@ -187,6 +190,7 @@ __kernel void preprocess2(__global const uchar *input_img,
         }
     }
 
+    //Write values buffers
     output_img    [y * width + x] = pixel;
     output_stdmean[y * width + x] = mean;
     output_stddev [y * width + x] = sqrt(deviation);
@@ -198,7 +202,8 @@ __kernel void preprocess2(__global const uchar *input_img,
 
 inline float window_stdmean(__global const uchar *pixels, const int w, const int h, int x, int y, const int win_size)
 {
-    //This is unoptimized mean kernel for initial OpenCL version
+    //This is part of unoptimized implementation
+    //Unoptimized preprocess uses this
 
     int ws = win_size >> 1;
 
@@ -217,7 +222,8 @@ inline float window_stdmean(__global const uchar *pixels, const int w, const int
 
 inline float window_stddev(__global const uchar *pixels, const int w, const int h, float mean, int x, int y, const int win_size)
 {
-    //This is unoptimized deviation kernel for initial OpenCL version
+    //This is part of unoptimized implementation
+    //Unoptimized preprocess uses this
 
     int ws = win_size >> 1;
 
@@ -243,8 +249,9 @@ __kernel void preprocess(__global const uchar *input_img,
                          __global float *output_stddev,
                          const int width, const int height, const int win_size)
 {
-    //This is unoptimized OpenCL implementation
+    //This is unoptimized implementation
     //This calculates window mean and deviations for disparity kernel
+    //OpenCLDisparity uses this when use_tiling=false
 
     int x = get_global_id(0);
     int y = get_global_id(1);
@@ -270,8 +277,9 @@ inline float ZNCC(__global const float *left_img,     __global const float *righ
                   const int width, const int height,
                   int x, int y, int x_offset, const int win_size)
 {
-    //This is unoptimized OpenCL implementation
-    //This calculates ZNCC value
+    //This is part of unoptimized implementation
+    //Calculates ZNCC value
+    //Unoptimized disparity kernel uses this
 
     int ws = win_size >> 1;
 
@@ -312,8 +320,9 @@ __kernel void disparity(__global uchar *disp,
                         const int width, const int height, const int win_size,
                         const int min_disparity, const int max_disparity)
 {
-    //This is unoptimized OpenCL implementation
+    //This is unoptimized implementation
     //Calculates disparity value using ZNCC
+    //OpenCLDisparity uses this when use_tiling=false
 
     int x = get_global_id(0);
     int y = get_global_id(1);

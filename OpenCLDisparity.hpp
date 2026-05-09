@@ -1,9 +1,8 @@
 #pragma once
 
-#include <memory>
 #include "Image.hpp"
 #include "Disparity.hpp"
-#include "OpenCLContext.hpp"
+#include <CL/cl.h>
 
 namespace Disparity
 {

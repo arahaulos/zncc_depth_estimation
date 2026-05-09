@@ -1,10 +1,9 @@
 #include <CL/cl.h>
-#include <iostream>
 
 #include "OpenCLDisparity.hpp"
 #include "Utils.hpp"
 #include "OpenCLImage.hpp"
-
+#include "OpenCLContext.hpp"
 
 constexpr int TILE_SIZE = 16;
 constexpr int BATCH_SIZE = 16;
@@ -73,11 +72,11 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
     cl_mem right_input_buffer;
 
     try {
-        //Try to upcast Images to OpenCLImages to get buffers
+        //Try to downcast Images to OpenCLImages to get buffers
         left_input_buffer = dynamic_cast<OpenCLImage&>(left).getOpenCLBuffer();
         right_input_buffer = dynamic_cast<OpenCLImage&>(right).getOpenCLBuffer();
     } catch (...) {
-        //Okay inputs are not OpenCLImages, lets allocate input buffers and send pixel data to GPU mem
+        //Okay inputs are not OpenCLImages, lets allocate input buffers and upload pixel data to GPU mem
         temp_input_buffers = true;
 
         left_input_buffer   = clCreateBuffer(ctx.context, CL_MEM_READ_ONLY, width*height*sizeof(uint8_t), NULL, NULL);
@@ -94,11 +93,13 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
         size_t global_work_size[2] = {(size_t)((width  + TILE_SIZE - 1)/TILE_SIZE)*TILE_SIZE,
                                        (size_t)((height + TILE_SIZE - 1)/TILE_SIZE)*TILE_SIZE};
 
-        //Tile is work group
+        //Tile is local work group
         size_t local_work_size[2] = {(size_t)TILE_SIZE, (size_t)TILE_SIZE};
 
 
-        //Calculate width of local buffers needed
+        //Calculate size for halo which surrounds tile
+        //Left halo is square, right halo needs to fit all x offset values for batch
+        //height = left_halo_width
         int left_halo_width  = TILE_SIZE + (win_size >> 1)*2; //Height for both halos is same
         int right_halo_width = TILE_SIZE + BATCH_SIZE + (win_size >> 1)*2;
 
@@ -115,8 +116,9 @@ DisparityResult OpenCLDisparityEstimator::estimate(Image &left, Image &right, in
         clEnqueueNDRangeKernel(ctx.queue, preprocessing_kernel2, 2, NULL, global_work_size, local_work_size, 0, NULL, &precompute_end);
 
 
+        //Because disparity kernel doesn't iterate whole disparity range in single launch
+        //We need to this buffer to store best ZNCC values so far for each pixel
         float min_zncc = -100000.0f;
-
         clEnqueueFillBuffer(ctx.queue, tmp_buffers[6], &min_zncc, sizeof(float), 0, width*height*sizeof(float), 0, NULL, NULL);
 
         //Tiled kernel uses batches, so that we don't need to launch for each disparity value

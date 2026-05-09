@@ -1,6 +1,5 @@
 #include "OpenCLImage.hpp"
 #include "OpenCLContext.hpp"
-#include <CL/cl.h>
 
 OpenCLImage::OpenCLImage()
 {
